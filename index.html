@@ -211,6 +211,12 @@
   <div class="nameRow">
     <input id="nameIn" maxlength="14" placeholder="YOUR NAME">
     <select id="qIn"></select>
+    <select id="fpsIn">
+      <option value="30">30 fps — quietest fans</option>
+      <option value="60" selected>60 fps — smooth, easy on the laptop</option>
+      <option value="120">120 fps — high refresh screens</option>
+      <option value="0">uncapped — let it rip</option>
+    </select>
     <select id="lenIn"><option value="3">3 min round</option><option value="5" selected>5 min round</option>
       <option value="8">8 min round</option><option value="12">12 min round</option></select>
   </div>
@@ -1673,13 +1679,37 @@ function stepLocalRound(dt){
     if(LR.t>=16) newLocalRound();
   }
 }
+/* The radio link. It keeps trying — a host that's still waking up, a laptop
+   lid closed for a minute, a wifi hiccup mid-round all recover on their own.
+   The game is fully playable against the AI the whole time either way. */
+let wsTries=0, wsTimer=null;
+function netMsg(s,ok){
+  const e=el("netState"); if(!e) return;
+  e.textContent=s; e.style.color=ok?"#34e0c8":"#6f7f74";
+}
+function netRetry(){
+  const wait=Math.min(8000,650*Math.pow(1.6,wsTries)); wsTries++;
+  netMsg("solo vs AI — retrying the link in "+Math.max(1,Math.round(wait/1000))+"s…",false);
+  clearTimeout(wsTimer); wsTimer=setTimeout(connect,wait);
+}
 function connect(){
+  clearTimeout(wsTimer);
   const proto=location.protocol==="https:"?"wss":"ws";
-  try{ ws=new WebSocket(proto+"://"+location.host); }
-  catch(e){ el("netState").textContent="offline — solo vs AI"; return; }
-  ws.onopen=()=>{netOK=true;el("netState").textContent="connected";};
-  ws.onclose=()=>{netOK=false;el("netState").textContent="disconnected — solo vs AI";};
-  ws.onerror=()=>{netOK=false;el("netState").textContent="offline — solo vs AI";};
+  netMsg(wsTries?("reconnecting… (try "+(wsTries+1)+")"):"connecting…",false);
+  try{ ws=new WebSocket(proto+"://"+location.host+"/"); }
+  catch(e){ return netRetry(); }
+  const giveUp=setTimeout(()=>{ if(!ws||ws.readyState!==1){ try{ws.close();}catch(e){} } },7000);
+  ws.onopen=()=>{
+    clearTimeout(giveUp); wsTries=0; netOK=true;
+    netMsg("connected — share this link and they're in your round",true);
+    if(myRole) send({t:"role",role:myRole,name:myName,rig:myRig,roundMin:roundMin});
+  };
+  ws.onclose=()=>{
+    clearTimeout(giveUp); netOK=false;
+    players.clear(); renderRoster();          // don't leave ghosts on the roster
+    netRetry();
+  };
+  ws.onerror=()=>{ netOK=false; };
   ws.onmessage=ev=>{
     let m;try{m=JSON.parse(ev.data);}catch(e){return;}
     if(m.t==="welcome"){
@@ -2044,10 +2074,16 @@ function seeable(ax,ay,ahdg,bx,by,rangePx,half,lightsOn,targetHidden){
 /* ==========================================================================
    LOOP
    ========================================================================== */
+/* Frame cap. A 120 Hz laptop will happily render this twice as many times
+   per second as the screen can show, and that is most of what spins the
+   fans. Skipping the frame before any work is done costs nothing. */
+let FPSCAP=60, frameAcc=0;
 function tick(){
   requestAnimationFrame(tick);
   if(!scene||!cam) return;
-  const dt=Math.min(.05,clock.getDelta());
+  frameAcc+=clock.getDelta();
+  if(FPSCAP && frameAcc < 1/FPSCAP-0.0008) return;
+  const dt=Math.min(.05,frameAcc); frameAcc=0;
   const st=state; if(!st){renderer.render(scene,cam);return;}
 
   if(running&&!paused){
@@ -2639,6 +2675,7 @@ let roundMin=5;
   const sel=el("qIn"), cur=localStorage.getItem("nightops.q")||"high";
   for(const k in QUAL) sel.innerHTML+=
     '<option value="'+k+'"'+(k===cur?" selected":"")+'>'+QUAL[k].label+' — '+QUAL[k].note+'</option>';
+  const f=localStorage.getItem("nightops.fps"); if(f!==null) el("fpsIn").value=f;
 })();
 document.querySelectorAll(".role[data-role]").forEach(r=>r.onclick=()=>{
   document.querySelectorAll(".role[data-role]").forEach(x=>x.classList.remove("sel"));
@@ -2681,6 +2718,7 @@ img.src=IMG_SRC;
 el("goBtn").onclick=()=>{
   initAudio();if(actx&&actx.state==="suspended")actx.resume();initMic();
   Q=QUAL[el("qIn").value]||QUAL.high; localStorage.setItem("nightops.q",el("qIn").value);
+  FPSCAP=parseInt(el("fpsIn").value,10)||0; localStorage.setItem("nightops.fps",el("fpsIn").value);
   myName=(el("nameIn").value||"").trim().slice(0,14)||("RIDER"+((Math.random()*90+10)|0));
   roundMin=parseInt(el("lenIn").value,10)||5;
   el("nameIn").blur();document.activeElement&&document.activeElement.blur&&document.activeElement.blur();
