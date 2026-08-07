@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: night-ops
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: ohio
+    healthCheckPath: /health
+    autoDeploy: true

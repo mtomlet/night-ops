@@ -1,0 +1,15 @@
+app = "night-ops"
+primary_region = "iad"          # change to the region nearest you
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false     # keep it warm so there's no cold start mid-game
+  auto_start_machines = true
+  min_machines_running = 1       # one always-on machine
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
