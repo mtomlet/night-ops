@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NIGHT OPS</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230a0f0c'/><circle cx='16' cy='16' r='7' fill='%23ffd76a'/></svg>">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;overflow:hidden;background:#03060a;
@@ -209,6 +210,7 @@
   </div>
   <div class="nameRow">
     <input id="nameIn" maxlength="14" placeholder="YOUR NAME">
+    <select id="qIn"></select>
     <select id="lenIn"><option value="3">3 min round</option><option value="5" selected>5 min round</option>
       <option value="8">8 min round</option><option value="12">12 min round</option></select>
   </div>
@@ -508,6 +510,22 @@ const PUMPS=[[382,566],[830,884],[923,1220]];
 const FILL_SECONDS=6.5;
 const EXTRACT=[730,150];
 
+const QUAL={
+  low:   {label:"LOW",    trees:3200, grass:5000,  bush:1000, pr:0.7,  seg:120, chunks:4,
+          stars:1200, nvStars:1800, fw:400,  smk:160, spl:80,  dst:40,  fly:60,
+          far:820,  fog:1.55, aniso:1, tSeg:4, cSeg:5, note:"old laptops · integrated graphics"},
+  medium:{label:"MEDIUM", trees:7500, grass:14000, bush:2000, pr:1.0,  seg:170, chunks:5,
+          stars:2200, nvStars:3500, fw:800,  smk:300, spl:160, dst:80,  fly:140,
+          far:1150, fog:1.2,  aniso:2, tSeg:4, cSeg:6, note:"most laptops"},
+  high:  {label:"HIGH",   trees:15000,grass:30000, bush:3400, pr:1.4,  seg:240, chunks:6,
+          stars:3400, nvStars:7000, fw:1400, smk:520, spl:260, dst:120, fly:260,
+          far:1600, fog:1.0,  aniso:4, tSeg:5, cSeg:7, note:"gaming laptop / desktop"},
+  ultra: {label:"ULTRA",  trees:30000,grass:70000, bush:6000, pr:2.0,  seg:360, chunks:8,
+          stars:6500, nvStars:13000,fw:2400, smk:900, spl:420, dst:220, fly:460,
+          far:2400, fog:0.8,  aniso:16,tSeg:7, cSeg:9, note:"desktop GPU — everything on"}
+};
+let Q=QUAL[localStorage.getItem("nightops.q")||"high"]||QUAL.high;
+
 const GEARS=[{n:"R",max:-5,tq:1.3},{n:"N",max:0,tq:0},{n:"1",max:6.5,tq:2.35},{n:"2",max:10,tq:1.35},
              {n:"3",max:15,tq:1.05},{n:"4",max:20,tq:.82},{n:"5",max:25.5,tq:.64}];
 const GN=1;
@@ -620,18 +638,39 @@ function rigFor(id,role,kind){
 /* ==========================================================================
    BUILD
    ========================================================================== */
+/* One InstancedMesh per map chunk. A single mesh spanning the whole farm has a
+   bounding sphere the size of the farm, so the GPU can never cull it — this is
+   what was drawing all 15,000 trees even the ones behind your head. */
+function addChunked(spots,geo,mat,place){
+  const G=Q.chunks, buckets={};
+  for(const sp of spots){
+    const k=Math.min(G-1,(sp[0]/IW*G)|0)+","+Math.min(G-1,(sp[1]/IH*G)|0);
+    (buckets[k]=buckets[k]||[]).push(sp);
+  }
+  const out=[]; const d=new THREE.Object3D();
+  for(const k in buckets){
+    const arr=buckets[k];
+    const im=new THREE.InstancedMesh(geo,mat,arr.length);
+    for(let i=0;i<arr.length;i++){ place(d,arr[i]); d.updateMatrix(); im.setMatrixAt(i,d.matrix); }
+    im.instanceMatrix.needsUpdate=true;
+    im.frustumCulled=true;
+    if(im.computeBoundingSphere) im.computeBoundingSphere();
+    scene.add(im); out.push(im);
+  }
+  return out;
+}
 function buildWorld(tex){
   scene=new THREE.Scene();
   scene.background=new THREE.Color(0x05080d);
-  scene.fog=new THREE.FogExp2(0x05080d,0.0026);
-  cam=new THREE.PerspectiveCamera(66,innerWidth/innerHeight,.4,1700);
+  scene.fog=new THREE.FogExp2(0x05080d,0.0026*Q.fog);
+  cam=new THREE.PerspectiveCamera(66,innerWidth/innerHeight,.4,Q.far);
 
   scene.userData.amb=new THREE.AmbientLight(0x1a2740,.075); scene.add(scene.userData.amb);
   const moon=new THREE.DirectionalLight(0xaec6e6,.085);moon.position.set(-260,340,-200);scene.add(moon);
   scene.userData.hemi=new THREE.HemisphereLight(0x1d2c44,0x090f0c,.055);scene.add(scene.userData.hemi);
 
   /* ---------------- sky ---------------- */
-  const starN=3400, sPos=new Float32Array(starN*3), sCol=new Float32Array(starN*3), sSz=new Float32Array(starN);
+  const starN=Q.stars, sPos=new Float32Array(starN*3), sCol=new Float32Array(starN*3), sSz=new Float32Array(starN);
   for(let i=0;i<starN;i++){
     // bias toward a milky band across the sky
     let u=Math.random()*2-1, th=Math.random()*6.2832;
@@ -652,7 +691,7 @@ function buildWorld(tex){
   stars.frustumCulled=false; scene.add(stars);
 
   /* Everything the naked eye can't gather. Under NVGs the sky fills in. */
-  const nvN=7000, nPos=new Float32Array(nvN*3), nCol=new Float32Array(nvN*3);
+  const nvN=Q.nvStars, nPos=new Float32Array(nvN*3), nCol=new Float32Array(nvN*3);
   for(let i=0;i<nvN;i++){
     let u=Math.random()*2-1, th=Math.random()*6.2832;
     if(i%2===0){ const band=(Math.random()-.5)*.30; u=Math.max(-1,Math.min(1,band+Math.sin(th)*.20)); }
@@ -689,7 +728,7 @@ function buildWorld(tex){
   moonGrp.renderOrder=-1; scene.add(moonGrp);
   scene.userData.sky=[stars,moonGrp];
 
-  const SEG=260;
+  const SEG=Q.seg;
   const gt=new THREE.PlaneGeometry(WW,WH,SEG,SEG);gt.rotateX(-Math.PI/2);
   const pos=gt.attributes.position;
   for(let i=0;i<pos.count;i++)pos.setY(i,height(toPX(pos.getX(i)),toPY(pos.getZ(i))));
@@ -699,47 +738,38 @@ function buildWorld(tex){
 
   /* forest */
   const tSpots=[];let guard=0;
-  while(tSpots.length<15000&&guard<420000){
+  while(tSpots.length<Q.trees&&guard<Q.trees*30){
     guard++;const px=Math.random()*IW,py=Math.random()*IH;
     if(drivable(px,py))continue;
     tSpots.push([px,py]);
   }
   const trunkG=new THREE.CylinderGeometry(.17,.3,3.4,4);trunkG.translate(0,1.7,0);
   const canG=new THREE.ConeGeometry(2.5,8.6,6);canG.translate(0,7.6,0);
-  const iT=new THREE.InstancedMesh(trunkG,
-    new THREE.MeshPhongMaterial({color:0x2d2419,flatShading:true}),tSpots.length);
-  const iC=new THREE.InstancedMesh(canG,
-    new THREE.MeshPhongMaterial({color:0x1d3524,flatShading:true}),tSpots.length);
-  const d=new THREE.Object3D();
-  for(let i=0;i<tSpots.length;i++){
-    const[px,py]=tSpots[i],s=.72+Math.random()*.85;
+  const trunkM=new THREE.MeshPhongMaterial({color:0x2d2419,flatShading:true});
+  const canM=new THREE.MeshPhongMaterial({color:0x1d3524,flatShading:true});
+  const placeTree=(d,sp)=>{ const[px,py]=sp, sc=.72+((px*7919+py*104729)%100)/100*.85;
     d.position.set(toWX(px),height(px,py)-.25,toWZ(py));
-    d.rotation.set(0,Math.random()*6.28,0);
-    d.scale.set(s,s*(.85+Math.random()*.5),s);d.updateMatrix();
-    iT.setMatrixAt(i,d.matrix);iC.setMatrixAt(i,d.matrix);
-  }
-  iT.instanceMatrix.needsUpdate=iC.instanceMatrix.needsUpdate=true;
-  iT.frustumCulled=iC.frustumCulled=false;scene.add(iT);scene.add(iC);
+    d.rotation.set(0,(px*13)%6.28,0);
+    d.scale.set(sc,sc*(.85+((py*31)%50)/100),sc); };
+  addChunked(tSpots,trunkG,trunkM,placeTree);
+  addChunked(tSpots,canG,canM,placeTree);
+  const d=new THREE.Object3D();
 
   /* grass — the fields are open. Tufts everywhere you can drive. */
   const gSpots=[]; guard=0;
-  while(gSpots.length<34000&&guard<900000){
+  while(gSpots.length<Q.grass&&guard<Q.grass*26){
     guard++; const px=Math.random()*IW, py=Math.random()*IH;
     if(!drivable(px,py)) continue;
     gSpots.push([px,py]);
   }
   // low, wide clumps — mowed pasture, not a nursery of little trees
   const tuftG=new THREE.ConeGeometry(.42,.17,5); tuftG.translate(0,.055,0);
-  const grass=new THREE.InstancedMesh(tuftG,
-    new THREE.MeshPhongMaterial({color:0x44532c,flatShading:true,shininess:0}),gSpots.length);
-  for(let i=0;i<gSpots.length;i++){
-    const[px,py]=gSpots[i], sc=.85+Math.random()*.85;
-    d.position.set(toWX(px),height(px,py)-.02,toWZ(py));
-    d.rotation.set(0,Math.random()*6.28,0);
-    d.scale.set(sc*1.5,.55+Math.random()*.8,sc*1.5); d.updateMatrix();
-    grass.setMatrixAt(i,d.matrix);
-  }
-  grass.instanceMatrix.needsUpdate=true; grass.frustumCulled=false; scene.add(grass);
+  addChunked(gSpots,tuftG,
+    new THREE.MeshPhongMaterial({color:0x44532c,flatShading:true,shininess:0}),
+    (d,sp)=>{ const[px,py]=sp, sc=.85+((px*7+py*13)%85)/100;
+      d.position.set(toWX(px),height(px,py)-.02,toWZ(py));
+      d.rotation.set(0,(px*17)%6.28,0);
+      d.scale.set(sc*1.5,.55+((py*7)%80)/100,sc*1.5); });
 
   /* bushes — THICK, and only off to the side: hedgerows along the treeline
      and packed tight down both shoulders of the Choke trail. */
@@ -750,7 +780,7 @@ function buildWorld(tex){
       for(const r of[10,18,26,34]) if(drivable(px+Math.cos(th)*r,py+Math.sin(th)*r)) return true;}
     return false;
   };
-  while(bushes.length<3400&&guard<300000){
+  while(bushes.length<Q.bush&&guard<Q.bush*90){
     guard++; const px=Math.random()*IW, py=Math.random()*IH;
     if(!nearEdge(px,py)) continue;
     bushes.push([px,py]);
@@ -770,16 +800,12 @@ function buildWorld(tex){
     }
   }
   const bushG=new THREE.IcosahedronGeometry(1.5,0);
-  bushMesh=new THREE.InstancedMesh(bushG,
-    new THREE.MeshPhongMaterial({color:0x1c3318,flatShading:true,shininess:1}),bushes.length);
-  for(let i=0;i<bushes.length;i++){
-    const[px,py]=bushes[i],s=1.5+Math.random()*1.5;
-    d.position.set(toWX(px),height(px,py)+.42*s,toWZ(py));
-    d.rotation.set(Math.random()*.5,Math.random()*6.28,Math.random()*.5);
-    d.scale.set(s*1.35,s*.95,s*1.35);d.updateMatrix();
-    bushMesh.setMatrixAt(i,d.matrix);
-  }
-  bushMesh.instanceMatrix.needsUpdate=true;bushMesh.frustumCulled=false;scene.add(bushMesh);
+  addChunked(bushes,bushG,
+    new THREE.MeshPhongMaterial({color:0x1c3318,flatShading:true,shininess:1}),
+    (d,sp)=>{ const[px,py]=sp, sc=1.5+((px*3+py*11)%150)/100;
+      d.position.set(toWX(px),height(px,py)+.42*sc,toWZ(py));
+      d.rotation.set(((px*5)%50)/100,(py*19)%6.28,((py*3)%50)/100);
+      d.scale.set(sc*1.35,sc*.95,sc*1.35); });
   buildMud(); buildFirePit(); buildBear(); buildAtmos(); buildFireworks(); buildSmoke();
   // spatial buckets so the hide check is cheap
   bushGrid={};
@@ -854,11 +880,11 @@ function buildMud(){
   const g=new THREE.SphereGeometry(.16,5,4);
   splash=new THREE.InstancedMesh(g,new THREE.MeshPhongMaterial({color:0x2e2418,flatShading:true}),260);
   splash.frustumCulled=false; splash.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(splash);
-  for(let i=0;i<260;i++) splashData.push({life:0,x:0,y:-999,z:0,vx:0,vy:0,vz:0,s:1});
+  for(let i=0;i<Q.spl;i++) splashData.push({life:0,x:0,y:-999,z:0,vx:0,vy:0,vz:0,s:1});
 }
 function spawnSplash(px,py,y,spd){
   for(let n=0;n<3;n++){
-    const d=splashData[splashN%260]; splashN++;
+    const d=splashData[splashN%Q.spl]; splashN++;
     d.life=0.55+Math.random()*0.4;
     d.x=toWX(px)+(Math.random()-.5)*1.4; d.y=y+0.35; d.z=toWZ(py)+(Math.random()-.5)*1.4;
     d.vx=(Math.random()-.5)*spd*0.35; d.vy=1.8+Math.random()*spd*0.22; d.vz=(Math.random()-.5)*spd*0.35;
@@ -868,7 +894,7 @@ function spawnSplash(px,py,y,spd){
 function stepSplash(dt){
   if(!splash)return;
   const o=new THREE.Object3D();
-  for(let i=0;i<260;i++){
+  for(let i=0;i<Q.spl;i++){
     const d=splashData[i];
     if(d.life>0){
       d.life-=dt; d.vy-=16*dt;
@@ -941,13 +967,14 @@ function stepSmoke(dt){
 
 /* ---------------- a bear, once in a blue moon ---------------- */
 let nadeMesh=null, nadeP=[], nadePN=0, nades=[];
-const NADE_MAX=520, NADE_LIFE=26, NADE_R=17;   // metres of cover
+let NADE_MAX=520, NADE_LIFE=26, NADE_R=17;   // metres of cover
 function buildSmoke(){
   nadeMesh=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),
     new THREE.MeshBasicMaterial({color:0xd8dde2,transparent:true,opacity:.30,
       depthWrite:false,side:THREE.DoubleSide}),NADE_MAX);
   nadeMesh.frustumCulled=false; nadeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   scene.add(nadeMesh);
+  NADE_MAX=Q.smk;
   for(let i=0;i<NADE_MAX;i++) nadeP.push({life:0,x:0,y:-9999,z:0,vx:0,vy:0,vz:0,s:1,rot:0});
 }
 function throwNade(px,py,hdg,spd){
@@ -1011,7 +1038,7 @@ function smokeBlocks(ax,ay,bx,by){
   return false;
 }
 let fw=null, fwD=[], fwN=0, rockets=[];
-const FW_MAX=1400;
+let FW_MAX=1400;
 let fwLights=[], fwLightN=0;
 function buildFireworks(){
   for(let i=0;i<6;i++){
@@ -1024,6 +1051,7 @@ function buildFireworks(){
       blending:THREE.AdditiveBlending,depthWrite:false,fog:false}),FW_MAX);
   fw.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(FW_MAX*3),3);
   fw.frustumCulled=false; fw.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(fw);
+  FW_MAX=Q.fw;
   for(let i=0;i<FW_MAX;i++) fwD.push({life:0,x:0,y:-9999,z:0,vx:0,vy:0,vz:0,s:1,r:1,g:1,b:1,drag:.985});
 }
 function burst(x,y,z,color,count,power,kind){
@@ -1114,7 +1142,7 @@ function finale(winner){
 let flies=null, flyD=[], mistGrp=null, dust=null, dustD=[], dustN=0;
 function buildAtmos(){
   // fireflies drifting over the open ground
-  const n=260;
+  const n=Q.fly;
   flies=new THREE.InstancedMesh(new THREE.SphereGeometry(.085,4,3),
     new THREE.MeshBasicMaterial({color:0xcfff7a,transparent:true,opacity:.9,
       blending:THREE.AdditiveBlending,depthWrite:false}),n);
@@ -1141,13 +1169,13 @@ function buildAtmos(){
   // dust kicked off dry ground
   dust=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),
     new THREE.MeshBasicMaterial({color:0x6b6250,transparent:true,opacity:.16,
-      depthWrite:false,side:THREE.DoubleSide}),120);
+      depthWrite:false,side:THREE.DoubleSide}),Q.dst);
   dust.frustumCulled=false; dust.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(dust);
-  for(let i=0;i<120;i++) dustD.push({life:0,x:0,y:-999,z:0,s:1});
+  for(let i=0;i<Q.dst;i++) dustD.push({life:0,x:0,y:-999,z:0,s:1});
 }
 function spawnDust(px,py,y,spd){
   for(let k=0;k<2;k++){
-    const d=dustD[dustN%120]; dustN++;
+    const d=dustD[dustN%Q.dst]; dustN++;
     d.life=.7+Math.random()*.5;
     d.x=toWX(px)+(Math.random()-.5)*1.6; d.y=y+.2; d.z=toWZ(py)+(Math.random()-.5)*1.6;
     d.s=1.1+Math.random()*1.6;
@@ -1172,7 +1200,7 @@ function stepAtmos(dt,t){
   if(mistGrp) for(const m of mistGrp.children) m.position.y+=Math.sin(t*.35+m.position.x)*dt*.05;
   if(dust){
     const o=new THREE.Object3D();
-    for(let i=0;i<120;i++){
+    for(let i=0;i<Q.dst;i++){
       const d=dustD[i];
       if(d.life>0){ d.life-=dt*.9; d.y+=dt*.55; d.s+=dt*1.6;
         o.position.set(d.x,d.y,d.z); o.quaternion.copy(cam.quaternion);
@@ -1666,8 +1694,13 @@ function connect(){
     }else if(m.t==="s"){
       if(m.id===myId)return;
       const p=players.get(m.id)||{};
+      const now=performance.now();
+      if(p.t&&now>p.t){ const d=(now-p.t)/1000;                 // so the AI can lead them too
+        p.vx=((m.x-p.px)/d)*0.35+(p.vx||0)*0.65;
+        p.vy=((m.y-p.py)/d)*0.35+(p.vy||0)*0.65; }
       p.px=m.x;p.py=m.y;p.hdg=m.h;p.lights=!!m.l;p.nv=!!m.v;p.role=m.r;p.out=!!m.o;p.rig=m.k||"rancher";
-      p.name=p.name||("P"+m.id);p.t=performance.now();players.set(m.id,p);
+      p.spd=m.sp||0; p.engine=m.e===undefined?true:!!m.e;
+      p.name=p.name||("P"+m.id);p.t=now;players.set(m.id,p);
     }else if(m.t==="tag"){
       if(m.target===myId&&state&&!state.out){ state.out=true; goGhost(); }
       else{const p=players.get(m.target);if(p)p.out=true;}
@@ -1695,8 +1728,9 @@ function connect(){
           state.out=false;
         }
       }
-      // shared tank progress
-      if(m.tanks) for(let i=0;i<canMeshes.length&&i<m.tanks.length;i++){
+      // shared tank progress — ONLY when the server is actually running the round,
+      // otherwise its empty [0,0,0] heartbeat resets what you just filled
+      if(m.tanks && m.phase==="running") for(let i=0;i<canMeshes.length&&i<m.tanks.length;i++){
         const c=canMeshes[i];
         if(m.tanks[i]>c.fill) c.fill=m.tanks[i];
         if(m.tanks[i]>=1 && !c.got){ c.got=true; c.grp.visible=false; c.halo.visible=false; }
@@ -1814,6 +1848,178 @@ function stepAI(u,dt,mps,huntTo){
          u.hdg=Math.atan2(b[1]-a[1],b[0]-a[0]);budget=0;}
   }
 }
+/* ==========================================================================
+   SMART AI
+   He hunts. He hears your engine across the field, remembers where you were
+   headed, cuts the corner to head you off, and sweeps the ground he hasn't
+   cleared yet. Kill your engine and he goes deaf. Sit in the brush and he
+   has to come put the lamp on you.
+   ========================================================================== */
+const SEARCH=["CHOKE","SF_S","SF_C","SF_N","RAMP","EF_1","NECK_L","NECK_U","EF_2","EF_3","EF_N",
+              "BT_B","BT_A","RW_3","RW_2","RW_1","HUB","WF_2","WF_N","NF_C","WF_3","WF_5",
+              "WF_7","WF_9","FOOT","RW_4","RW_5","RW_6","RW_7"];
+const COVER=[[318,900],[334,776],[551,879],[676,812],[834,752],[919,1420],[1098,502],
+             [303,986],[759,1152],[529,640],[922,606],[348,1068]];
+
+/* how far an engine carries, in metres. Shut it off and it carries nothing. */
+function noiseM(o){
+  if(o.engine===false) return 0;
+  return 55 + Math.abs(o.spd||0)*9.5 + ((o.mud||0)>0.35 ? 45 : 0);
+}
+/* smoothed velocity so the AI can lead you instead of chasing your tail */
+function trackVel(o,dt){
+  if(o._lx!==undefined&&dt>0){
+    o.vx=((o.px-o._lx)/dt)*0.3+(o.vx||0)*0.7;
+    o.vy=((o.py-o._ly)/dt)*0.3+(o.vy||0)*0.7;
+  }
+  o._lx=o.px; o._ly=o.py;
+}
+function leadPt(t,secs){
+  let x=t.px+(t.vx||0)*secs, y=t.py+(t.vy||0)*secs;
+  if(!drivable(x,y)){const g=nearestDrivable(x,y);x=g[0];y=g[1];}
+  return [x,y];
+}
+/* one step toward a point: straight across the field when the ground allows
+   it, otherwise fall back on the road network. Returns true on arrival. */
+function driveAt(u,tx,ty,mps,dt){
+  const spx=mps*M2P, d=Math.hypot(tx-u.px,ty-u.py);
+  if(d<2) return true;
+  if(losOpen(u.px,u.py,tx,ty)){
+    u.path=null; u.goal=null;
+    const step=Math.min(d,spx*dt);
+    const blocked=moveOn(u,u.px+(tx-u.px)/d*step,u.py+(ty-u.py)/d*step);
+    u.hdg=Math.atan2(ty-u.py,tx-u.px);
+    if(!blocked) return false;
+  }
+  const goal=nearestNode(tx,ty);
+  if(!u.path||u.goal!==goal||u.idx>=u.path.length-1){
+    u.goal=goal; u.path=route(nearestNode(u.px,u.py),goal); u.idx=0;
+    if(u.path.length<2){u.path=null;return false;}
+  }
+  let budget=spx*dt;
+  while(budget>0&&u.idx<u.path.length-1){
+    const b=u.path[u.idx+1], dd=Math.hypot(b[0]-u.px,b[1]-u.py);
+    if(dd<=budget){u.hdg=Math.atan2(b[1]-u.py,b[0]-u.px);u.px=b[0];u.py=b[1];budget-=dd;u.idx++;}
+    else{u.px+=(b[0]-u.px)/dd*budget;u.py+=(b[1]-u.py)/dd*budget;
+         u.hdg=Math.atan2(b[1]-u.py,b[0]-u.px);budget=0;}
+  }
+  return false;
+}
+function huntPhase(){ return serverDriving()?RS.phase==="running":LR.phase==="running"; }
+
+function smartSeeker(s,st,dt){
+  if(s.si===undefined){s.si=0;s.mode="patrol";s.memo=0;s.sweep=0;s.lock={};s.spot=null;}
+  trackVel(s,dt);
+  if(!huntPhase()){ s.sweep=Math.sin(st.t*0.8)*0.45; s.spd=0; return; }
+
+  /* -------- everyone he could be looking for -------- */
+  const cand=[];
+  if(myRole==="hider"&&!st.out)
+    cand.push({px:st.px,py:st.py,vx:st.vx||0,vy:st.vy||0,spd:st.spd,
+               engine:st.engine,mud:st.mud,lights:st.lights});
+  for(const[id,p]of players) if(p.role==="hider"&&!p.out)
+    cand.push({px:p.px,py:p.py,vx:p.vx||0,vy:p.vy||0,spd:p.spd||0,
+               engine:p.engine!==false,mud:0,lights:p.lights});
+  for(const h of st.ai.hiders) if(!h.out)
+    cand.push({px:h.px,py:h.py,vx:h.vx||0,vy:h.vy||0,spd:h.mps||0,
+               engine:h.engine!==false,mud:0,lights:h.lights});
+
+  /* -------- eyes and ears -------- */
+  let seen=null,seenD=1e9,heard=null,heardD=1e9;
+  const hd=s.hdg+(s.sweep||0);
+  for(const c of cand){
+    const d=Math.hypot(c.px-s.px,c.py-s.py);
+    const hidden=inBush(c.px,c.py)||inSmoke(c.px,c.py);
+    const lamp = c.lights && d<SPOT_PX && losOpen(s.px,s.py,c.px,c.py) &&
+                 !smokeBlocks(s.px,s.py,c.px,c.py);            // your own lights give you up
+    const beam = seeable(s.px,s.py,hd,c.px,c.py,BEAM_PX*1.15,BEAM_HALF*1.45,true,hidden);
+    if((lamp||beam)&&d<seenD){seenD=d;seen=c;}
+    const nz=noiseM(c)*M2P;                                    // ears ignore brush and beams
+    if(nz>0&&d<nz&&d<heardD){heardD=d;heard=c;}
+  }
+
+  if(seen){ s.mode="chase"; s.memo=9; s.mx=seen.px; s.my=seen.py; s.tvx=seen.vx; s.tvy=seen.vy; }
+  else if(heard){
+    if(s.mode!=="chase"){ s.mode="hunt"; s.memo=Math.max(s.memo,5.5); }
+    else s.memo=Math.max(s.memo,4);
+    s.mx=heard.px; s.my=heard.py; s.tvx=heard.vx; s.tvy=heard.vy;
+  }
+  s.memo=Math.max(0,s.memo-dt);
+  if(s.memo<=0&&s.mode!=="patrol"){ s.mode="patrol"; s.spot=null; }
+
+  /* -------- drive -------- */
+  let gx,gy,mps;
+  if(s.mode==="chase"&&seen){
+    const lead=Math.min(2.2,seenD/(M2P*22));
+    const p=leadPt(seen,lead); gx=p[0]; gy=p[1];
+    mps = seenD<BEAM_PX*0.65 ? 8.5 : 17.5;        // ease off once he's on you so the lamp can hold
+    s.sweep += (0-s.sweep)*Math.min(1,dt*6);       // lamp dead ahead
+  }else if(s.mode!=="patrol"){
+    const p=leadPt({px:s.mx,py:s.my,vx:s.tvx,vy:s.tvy},1.4); gx=p[0]; gy=p[1];
+    mps=15; s.sweep=Math.sin(st.t*2.1)*0.30;
+  }else{
+    if(!s.spot||Math.hypot(s.spot[0]-s.px,s.spot[1]-s.py)<30){
+      s.si=(s.si+1+((Math.random()*3)|0))%SEARCH.length; s.spot=N[SEARCH[s.si]];
+    }
+    gx=s.spot[0]; gy=s.spot[1]; mps=11.5; s.sweep=Math.sin(st.t*1.15)*0.62;
+  }
+  if(driveAt(s,gx,gy,mps,dt)&&s.mode==="patrol") s.spot=null;
+  s.spd=mps;
+
+  /* -------- he tags the AI hiders too — same 2 second hold -------- */
+  const hd2=s.hdg+(s.sweep||0);
+  for(let i=0;i<st.ai.hiders.length;i++){
+    const h=st.ai.hiders[i];
+    if(h.out){s.lock[i]=0;continue;}
+    const lit=seeable(s.px,s.py,hd2,h.px,h.py,BEAM_PX,BEAM_HALF,true,
+                      inBush(h.px,h.py)||inSmoke(h.px,h.py));
+    s.lock[i]=lit?(s.lock[i]||0)+dt:Math.max(0,(s.lock[i]||0)-dt*1.6);
+    if(s.lock[i]>=DWELL){
+      h.out=true; s.lock[i]=0;
+      if(myRole!=="seeker") say("◂ HE GOT ONE — "+st.ai.hiders.filter(x=>!x.out).length+" LEFT ▸",2.6);
+    }
+  }
+}
+
+function smartHider(h,st,dt,i){
+  if(h.mps===undefined){h.mps=0;h.spot=null;h.wander=0;h.engine=true;}
+  let tx=0,ty=0,td=1e9;
+  const consider=(px,py)=>{const d=Math.hypot(px-h.px,py-h.py);if(d<td){td=d;tx=px;ty=py;}};
+  if(!humanSeekerExists()&&st.ai.seek) consider(st.ai.seek.px,st.ai.seek.py);
+  if(myRole==="seeker"&&!st.out) consider(st.px,st.py);
+  for(const[,p]of players) if(p.role==="seeker"&&!p.out) consider(p.px,p.py);
+
+  if(!huntPhase()){                                  // 15 seconds to get off the road
+    if(!h.spot) h.spot=COVER[(i*4+1)%COVER.length];
+    h.lights=false; h.engine=true; h.mps=9;
+    if(driveAt(h,h.spot[0],h.spot[1],h.mps,dt)){h.mps=0;h.engine=false;}
+    trackVel(h,dt); return;
+  }
+  if(td<230*M2P){                                    // he's close — run, lights out
+    if(!h.flee||(h.fleeT-=dt)<=0){
+      let best=null,bs=-1e9;
+      for(const c of COVER){
+        const sc=Math.hypot(c[0]-tx,c[1]-ty)-Math.hypot(c[0]-h.px,c[1]-h.py)*1.15;
+        if(sc>bs){bs=sc;best=c;}
+      }
+      h.flee=best; h.fleeT=5;
+    }
+    h.lights=false; h.engine=true; h.mps=12.5;
+    driveAt(h,h.flee[0],h.flee[1],h.mps,dt);
+  }else{
+    h.flee=null;
+    if(!h.spot||(h.wander-=dt)<=0||Math.hypot(h.spot[0]-h.px,h.spot[1]-h.py)<25){
+      h.spot=COVER[(Math.random()*COVER.length)|0]; h.wander=18+Math.random()*14;
+    }
+    // sitting on his spot with a big lead, he shuts it off and listens
+    const parked=Math.hypot(h.spot[0]-h.px,h.spot[1]-h.py)<30&&td>430*M2P;
+    h.engine=!parked; h.mps=parked?0:8.5;
+    h.lights = td>430*M2P && !parked;
+    if(!parked) driveAt(h,h.spot[0],h.spot[1],h.mps,dt);
+  }
+  trackVel(h,dt);
+}
+
 function bar(f){const n=Math.round(Math.max(0,Math.min(1,f))*10);
   return "["+"\u2588".repeat(n)+"\u00b7".repeat(10-n)+"]";}
 function say(msg,dur){ if(!state)return; state.radioT=dur||2.6;
@@ -1840,6 +2046,7 @@ function seeable(ax,ay,ahdg,bx,by,rangePx,half,lightsOn,targetHidden){
    ========================================================================== */
 function tick(){
   requestAnimationFrame(tick);
+  if(!scene||!cam) return;
   const dt=Math.min(.05,clock.getDelta());
   const st=state; if(!st){renderer.render(scene,cam);return;}
 
@@ -2081,8 +2288,11 @@ function tick(){
         for(let i=0;i<canMeshes.length;i++){
           const c=canMeshes[i];
           if(c.got) continue;
-          const near=Math.hypot(st.px-c.px,st.py-c.py)<26;
-          if(near && Math.abs(st.spd)<1.6){
+          /* a little hysteresis so a bump off the pad doesn't drop the nozzle */
+          const d=Math.hypot(st.px-c.px,st.py-c.py);
+          const near = c.on ? d<34 : d<26;
+          c.on = near;
+          if(near && Math.abs(st.spd)<2.2){
             st.pumping=i;
             c.fill+=dt/FILL_SECONDS;
             if(netOK && Math.floor(c.fill*10)!==Math.floor(c.lastSent*10)){
@@ -2094,9 +2304,9 @@ function tick(){
               c.grp.visible=false; c.halo.visible=false;
               say("◂ TANK "+st.cans+" OF 3 FILLED ▸",2.2);
             }
-          }else if(!near){
-            c.fill=Math.max(0,c.fill-dt*0.35);          // walk away and it drains back
           }
+          /* what you put in STAYS in. Get run off the pump and you pick up
+             right where you left off — fuel doesn't pour back out. */
         }
         if(st.cans>=3){st.phase="extract";extractMesh.visible=true;extractRing.visible=true;
           say("◂ ALL THREE TANKS — RUN FOR THE NORTH FIELD ▸",3.4);}
@@ -2114,7 +2324,8 @@ function tick(){
     const now=performance.now();
     if(now-lastSend>66){lastSend=now;
       send({t:"s",x:+st.px.toFixed(1),y:+st.py.toFixed(1),h:+st.hdg.toFixed(3),
-            l:st.lights?1:0,v:st.nv?1:0,r:myRole,o:st.out?1:0,k:myRig});}
+            l:st.lights?1:0,v:st.nv?1:0,r:myRole,o:st.out?1:0,k:myRig,
+            sp:+Math.abs(st.spd).toFixed(1),e:st.engine?1:0});}
   }
 
   /* ---------------- render transforms ---------------- */
@@ -2424,6 +2635,11 @@ addEventListener("resize",()=>{if(!renderer)return;
   cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 
 let roundMin=5;
+(function(){
+  const sel=el("qIn"), cur=localStorage.getItem("nightops.q")||"high";
+  for(const k in QUAL) sel.innerHTML+=
+    '<option value="'+k+'"'+(k===cur?" selected":"")+'>'+QUAL[k].label+' — '+QUAL[k].note+'</option>';
+})();
 document.querySelectorAll(".role[data-role]").forEach(r=>r.onclick=()=>{
   document.querySelectorAll(".role[data-role]").forEach(x=>x.classList.remove("sel"));
   r.classList.add("sel"); myRole=r.dataset.role;
@@ -2439,11 +2655,11 @@ document.querySelectorAll(".role[data-rig]").forEach(r=>r.onclick=()=>{
 const img=new Image();
 img.onload=()=>{
   miniImg=img;
-  const tex=new THREE.Texture(img);tex.needsUpdate=true;tex.anisotropy=4;
+  const tex=new THREE.Texture(img);tex.needsUpdate=true;tex.anisotropy=Math.min(Q.aniso,renderer?renderer.capabilities.getMaxAnisotropy():4);
   if("colorSpace" in tex&&THREE.SRGBColorSpace)tex.colorSpace=THREE.SRGBColorSpace;
   else if(THREE.sRGBEncoding)tex.encoding=THREE.sRGBEncoding;
   renderer=new THREE.WebGLRenderer({canvas:el("gl"),antialias:true,powerPreference:"high-performance"});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));
+  renderer.setPixelRatio(Math.min(devicePixelRatio,Q.pr));
   renderer.setSize(innerWidth,innerHeight);
   if("outputColorSpace" in renderer&&THREE.SRGBColorSpace)renderer.outputColorSpace=THREE.SRGBColorSpace;
   else if(THREE.sRGBEncoding)renderer.outputEncoding=THREE.sRGBEncoding;
@@ -2454,20 +2670,35 @@ img.onload=()=>{
     for(let i=0;i<PUMPS.length;i++)if(!reachable(PUMPS[i][0],PUMPS[i][1]))bad.push("PUMP"+i);
     if(!reachable(EXTRACT[0],EXTRACT[1]))bad.push("EXTRACT");
     window.__connectivity={cells,unreachable:bad};
-    buildWorld(tex);
-    clock=new THREE.Clock();state=freshState();
+    window.__tex=tex;
+    clock=new THREE.Clock(); state=freshState();
     el("boot").classList.add("hide");
-    connect(); tick();
+    connect();
   },40);
 };
 img.src=IMG_SRC;
 
 el("goBtn").onclick=()=>{
   initAudio();if(actx&&actx.state==="suspended")actx.resume();initMic();
+  Q=QUAL[el("qIn").value]||QUAL.high; localStorage.setItem("nightops.q",el("qIn").value);
   myName=(el("nameIn").value||"").trim().slice(0,14)||("RIDER"+((Math.random()*90+10)|0));
   roundMin=parseInt(el("lenIn").value,10)||5;
   el("nameIn").blur();document.activeElement&&document.activeElement.blur&&document.activeElement.blur();
-  el("start").classList.add("hide");joined=true;resetGame();renderRoster();
+  el("start").classList.add("hide");
+  if(!scene){
+    // the picked tier only takes effect now — resolution and texture filtering with it
+    renderer.setPixelRatio(Math.min(devicePixelRatio,Q.pr));
+    renderer.setSize(innerWidth,innerHeight);
+    if(window.__tex){ window.__tex.anisotropy=Math.min(Q.aniso,renderer.capabilities.getMaxAnisotropy());
+                      window.__tex.needsUpdate=true; }
+    el("load").textContent="BUILDING WORLD — "+Q.label+"…";
+    el("boot").classList.remove("hide");
+    setTimeout(function(){
+      buildWorld(window.__tex);
+      el("boot").classList.add("hide");
+      joined=true; resetGame(); renderRoster(); tick();
+    },40);
+  }else{ joined=true; resetGame(); renderRoster(); }
 };
 el("againBtn").onclick=()=>resetGame();
 </script>
