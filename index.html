@@ -55,6 +55,14 @@
          text-shadow:0 2px 10px rgba(0,0,0,.95),0 0 3px rgba(0,0,0,.9)}
   #radio.show{opacity:1}
 
+  #specBar{bottom:22px;left:50%;transform:translateX(-50%);text-align:center;
+           background:rgba(6,11,9,.82);border:1px solid rgba(120,240,210,.28);
+           border-radius:3px;padding:9px 22px;opacity:0;transition:opacity .3s;
+           box-shadow:0 6px 26px rgba(0,0,0,.6)}
+  #specBar.show{opacity:1}
+  #specWho{font-size:15px;letter-spacing:.16em;color:#cfe6dc}
+  #specHint{margin-top:5px;font-size:10.5px;letter-spacing:.13em;color:#8fa89a}
+
   #vig{position:fixed;inset:0;pointer-events:none;
        background:radial-gradient(ellipse at center,transparent 46%,rgba(0,0,0,.66) 100%)}
   #flash{position:fixed;inset:0;pointer-events:none;background:#ffe9b0;opacity:0;mix-blend-mode:screen}
@@ -178,6 +186,7 @@
 
 <div class="hud" id="alert"></div>
 <div class="hud" id="radio"></div>
+<div class="hud" id="specBar"><div id="specWho"></div><div id="specHint"></div></div>
 <div class="hud" id="ptt">◉ TRANSMITTING</div>
 <div class="hud" id="rx"></div>
 <div id="mudsc"></div>
@@ -1806,15 +1815,160 @@ function renderRoster(){
   }
   el("plist").innerHTML=rows.join("");
 }
+/* ==========================================================================
+   SPECTATOR
+   Caught means your machine is done for the round, not that you're done
+   watching. You come off the four wheeler and go up on the wire: ride any
+   rider's shoulder, sit on a drone over the whole farm, or fly it yourself.
+   Being out is the only time you get to see the hunt from the outside.
+   ========================================================================== */
+const SPECMODES=["SHOULDER","DRONE","FREE"];
+const spec={on:false,mode:0,key:null,fx:0,fy:70,fz:0,yaw:0,pitch:-0.42,orbit:0,snap:true};
+function specTargets(){
+  const st=state,out=[];
+  for(const[id,p]of players){
+    if(!p.role||p.out)continue;
+    out.push({key:"p"+id,name:p.name||("P"+id),role:p.role,px:p.px,py:p.py,
+              hdg:p.hdg,lights:p.lights,human:true});
+  }
+  if(!humanSeekerExists()&&st.ai.seek)
+    out.push({key:"ais",name:"THE SEEKER",role:"seeker",px:st.ai.seek.px,py:st.ai.seek.py,
+              hdg:st.ai.seek.hdg+(st.ai.seek.sweep||0),lights:true});
+  st.ai.hiders.forEach((h,i)=>{ if(!h.out)
+    out.push({key:"aih"+i,name:AI_NAMES[i%AI_NAMES.length],role:"hider",px:h.px,py:h.py,
+              hdg:h.hdg,lights:h.lights}); });
+  out.sort((a,b)=>(a.role==="seeker"?0:1)-(b.role==="seeker"?0:1));  // the hunt first
+  return out;
+}
+function specEnter(){
+  if(spec.on)return;
+  spec.on=true; spec.mode=0; spec.orbit=0; spec.snap=true;
+  const t=specTargets(); spec.key=t.length?t[0].key:null;
+  const st=state;
+  spec.fx=toWX(st.px); spec.fz=toWZ(st.py); spec.fy=height(st.px,st.py)+55;
+  spec.yaw=st.hdg; spec.pitch=-0.42;
+  st.lights=false; st.spd=0; st.engine=false; st.nv=false; nvTick(false);
+  el("specBar").classList.add("show");
+  el("obj").style.display="none"; el("gear").style.display="none";
+}
+function specExit(){
+  if(!spec.on)return;
+  spec.on=false;
+  if(specRing) specRing.visible=false;
+  if(specFill){ specFill.visible=false; specFill.intensity=0; }
+  el("specBar").classList.remove("show");
+  el("obj").style.display=""; el("gear").style.display="";
+}
+function specCycle(d){
+  const t=specTargets(); if(!t.length)return;
+  let i=t.findIndex(x=>x.key===spec.key); if(i<0)i=0;
+  spec.key=t[(i+d+t.length)%t.length].key; spec.snap=true;   // be there now, don't fly there
+}
+function specCam(dt,st){
+  const t=specTargets();
+  let tg=t.find(x=>x.key===spec.key);
+  if(!tg&&t.length){ tg=t[0]; spec.key=tg.key; }
+  if(spec.mode===2||!tg){
+    /* fly it yourself — take over from wherever the camera already was */
+    if(spec.snap){ spec.fx=cam.position.x; spec.fy=cam.position.y; spec.fz=cam.position.z;
+                   spec.snap=false; }
+    const fast=keys["shiftleft"]||keys["shiftright"];
+    const sp=(fast?95:36)*dt;
+    if(keys["arrowleft"]) spec.yaw-=dt*1.6;
+    if(keys["arrowright"])spec.yaw+=dt*1.6;
+    if(keys["arrowup"])   spec.pitch=Math.min(1.35,spec.pitch+dt*1.2);
+    if(keys["arrowdown"]) spec.pitch=Math.max(-1.35,spec.pitch-dt*1.2);
+    const cp=Math.cos(spec.pitch);
+    const fwd=new THREE.Vector3(Math.cos(spec.yaw)*cp,Math.sin(spec.pitch),Math.sin(spec.yaw)*cp);
+    const rgt=new THREE.Vector3(-Math.sin(spec.yaw),0,Math.cos(spec.yaw));
+    if(keys["keyw"]){spec.fx+=fwd.x*sp;spec.fy+=fwd.y*sp;spec.fz+=fwd.z*sp;}
+    if(keys["keys"]){spec.fx-=fwd.x*sp;spec.fy-=fwd.y*sp;spec.fz-=fwd.z*sp;}
+    if(keys["keya"]){spec.fx-=rgt.x*sp;spec.fz-=rgt.z*sp;}
+    if(keys["keyd"]){spec.fx+=rgt.x*sp;spec.fz+=rgt.z*sp;}
+    if(keys["space"])spec.fy+=sp;
+    if(keys["controlleft"]||keys["controlright"])spec.fy-=sp;
+    const ground=height(toPX(spec.fx),toPY(spec.fz));
+    spec.fy=Math.max(ground+2.2,Math.min(400,spec.fy));
+    spec.fx=Math.max(-WW/2,Math.min(WW/2,spec.fx));
+    spec.fz=Math.max(-WH/2,Math.min(WH/2,spec.fz));
+    cam.position.set(spec.fx,spec.fy,spec.fz);
+    cam.lookAt(spec.fx+fwd.x*30,spec.fy+fwd.y*30,spec.fz+fwd.z*30);
+    return tg;
+  }
+  const gx=toWX(tg.px),gz=toWZ(tg.py),gy=height(tg.px,tg.py);
+  if(spec.mode===0){
+    /* on his shoulder */
+    const f=new THREE.Vector3(Math.cos(tg.hdg),0,Math.sin(tg.hdg));
+    const want=new THREE.Vector3(gx,gy,gz).add(f.clone().multiplyScalar(-9.4))
+                                          .add(new THREE.Vector3(0,5.1,0));
+    want.y=Math.max(want.y,height(toPX(want.x),toPY(want.z))+2.0);
+    if(spec.snap){cam.position.copy(want);spec.snap=false;}
+    else cam.position.lerp(want,Math.min(1,dt*3.4));
+    cam.lookAt(gx+f.x*15,gy+1.6,gz+f.z*15);
+  }else{
+    /* drone — high and slowly circling, you can see the whole hunt */
+    spec.orbit+=dt*0.16;
+    const R=37,H=26;
+    const want=new THREE.Vector3(gx+Math.cos(spec.orbit)*R,gy+H,gz+Math.sin(spec.orbit)*R);
+    want.y=Math.max(want.y,height(toPX(want.x),toPY(want.z))+16);
+    if(spec.snap){cam.position.copy(want);spec.snap=false;}
+    else cam.position.lerp(want,Math.min(1,dt*2.2));
+    cam.lookAt(gx,gy+1.2,gz);
+  }
+  return tg;
+}
+let specRing=null;
+let specFill=null;
+/* a soft lamp riding the camera. You're watching from behind him, so his own
+   headlight is throwing light away from you and the machine reads as a black
+   shape. This puts just enough on it to see who you're following. */
+function specLight(tg){
+  if(!specFill){ specFill=new THREE.PointLight(0xc3d8ee,0,70,1.4); scene.add(specFill); }
+  specFill.visible=spec.on;
+  if(!spec.on){ specFill.intensity=0; return; }
+  specFill.position.copy(cam.position);
+  specFill.intensity=tg?26:0;
+}
+function specBeacon(tg,st){
+  if(!specRing){
+    specRing=new THREE.Mesh(new THREE.RingGeometry(3.0,3.7,44),
+      new THREE.MeshBasicMaterial({color:0x34e0c8,transparent:true,opacity:.5,
+        side:THREE.DoubleSide,depthWrite:false,depthTest:false}));
+    specRing.rotation.x=-Math.PI/2; specRing.renderOrder=999; scene.add(specRing);
+  }
+  specRing.visible=spec.on&&!!tg;
+  if(!tg) return;
+  specRing.position.set(toWX(tg.px),height(tg.px,tg.py)+0.4,toWZ(tg.py));
+  specRing.material.color.setHex(tg.role==="seeker"?0xff6a55:0x34e0c8);
+  specRing.material.opacity=.40+Math.sin(st.t*3.2)*.20;
+  specRing.scale.setScalar(1+Math.sin(st.t*3.2)*0.07);
+}
+function specHUD(tg){
+  const t=specTargets();
+  const seek=t.filter(x=>x.role==="seeker").length, hide=t.filter(x=>x.role==="hider").length;
+  el("specWho").innerHTML= tg
+    ? ('WATCHING <b style="color:'+(tg.role==="seeker"?"#ff8a80":"#34e0c8")+'">'+tg.name+
+       '</b> <span style="color:#6f7f74">· '+tg.role.toUpperCase()+'</span>')
+    : 'FREE CAMERA <span style="color:#6f7f74">· nobody left to follow</span>';
+  el("specHint").innerHTML=
+    '<b>'+SPECMODES[spec.mode]+'</b> <span style="color:#4a564d">[C]</span>'+
+    (spec.mode===2 ? ' &nbsp;·&nbsp; WASD fly · SPACE/CTRL up-down · ARROWS look · SHIFT boost'
+                   : ' &nbsp;·&nbsp; <span style="color:#8fa89a">A / D</span> change rider')+
+    ' &nbsp;·&nbsp; <span style="color:#6f7f74">'+hide+' hider'+(hide===1?"":"s")+
+    ' still in · '+seek+' hunting</span>';
+}
+
 function goGhost(){
   el("flash").style.opacity=0;
   el("alert").classList.remove("show");
-  say("◂ YOU'RE OUT — RIDE ALONG UNTIL THE NEXT ROUND ▸",4.5);
+  specEnter();
+  say("◂ YOU'RE OUT — YOU'RE ON THE CAMERA NOW. [A]/[D] RIDERS, [C] CAMERA ▸",5.5);
 }
 function respawnForRound(){
   if(!state) return;
   const sp=pick(SPAWNS[myRole]||SPAWNS.hider);
   state.px=sp[0]; state.py=sp[1]; state.spd=0; state.out=false;
+  specExit();
   state.wipe=0; state.air=false; state.cans=0; state.phase="collect";
   state.engine=true; state.crank=0; state.mudScreen=0;
   state.smokes=2; state.beamHold=0; state.lock={}; nades.length=0;
@@ -1848,7 +2002,7 @@ function freshState(){
 }
 function resetGame(){
   for(const k in keys)keys[k]=false;
-  state=freshState();
+  state=freshState(); specExit();
   LR.phase="hide"; LR.t=0; LR.winner=null; LR.len=roundMin*60;
   for(const h of state.ai.hiders) h.out=false;
   for(const c of canMeshes){c.got=false;c.fill=0;c.grp.visible=true;c.halo.visible=true;}
@@ -2382,7 +2536,10 @@ function tick(){
 
     /* ---- driving: plain WASD, S reverses automatically ---- */
     const boost=1;
-    const wUp=keys["keyw"]||keys["arrowup"], wDn=keys["keys"]||keys["arrowdown"];
+    /* off the machine and up on the wire — the keys fly the camera now */
+    if(spec.on){ st.spd=0; st.thr=0; st.rpm=0; st.air=false; st.vy=0; st.wipe=0; }
+    const wUp=!spec.on&&(keys["keyw"]||keys["arrowup"]);
+    const wDn=!spec.on&&(keys["keys"]||keys["arrowdown"]);
     const topScale=isKub?0.45:1;
 
     if(!st.adv){
@@ -2442,7 +2599,8 @@ function tick(){
     st.rpm=gmax!==0?Math.min(1,Math.abs(st.spd)/Math.abs(gmax)):Math.abs(st.spd)/8;
 
     /* ---- steering with a traction budget ---- */
-    const turn=((keys["keyd"]||keys["arrowright"])?1:0)-((keys["keya"]||keys["arrowleft"])?1:0);
+    const turn=spec.on?0:
+      (((keys["keyd"]||keys["arrowright"])?1:0)-((keys["keya"]||keys["arrowleft"])?1:0));
     // quick hands at low speed, calmer as it winds out
     const sSpeed=13-Math.min(7,Math.abs(st.spd)*0.34);
     st.steer+=((turn*1.5)-st.steer)*Math.min(1,dt*sSpeed);
@@ -2672,17 +2830,22 @@ function tick(){
   me.light.target.position.set(0,-1.1+st.squat*7+bob*8,26);
   me.flood.target.position.set(0,-2.4+st.squat*5,9);
   me.beam.rotation.x=st.squat*0.85+bob;
-  me.beam.visible=st.lights&&camMode===0;
+  me.beam.visible=st.lights&&camMode===0&&!spec.on;
+  me.atv.visible=!spec.on;                    // your machine is out of the round
   for(const p of me.atv.userData.pods)p.material.color.setHex(st.lights?0xfff2c8:0x2a2a24);
   me.glow.material.opacity=0;
 
   // night vision
-  scene.userData.amb.intensity=st.nv?16:.075;
-  scene.userData.hemi.intensity=st.nv?7.5:.055;
+  /* a spectator gets a little moonlight lifted for them — pitch black is the
+     hider's problem, and you can't watch a hunt you can't see */
+  /* the spectator gets real moonlight — you cannot watch a hunt you can't see */
+  scene.userData.amb.color.setHex(spec.on?0x64789c:0x1a2740);
+  scene.userData.amb.intensity =st.nv?16 :(spec.on?2.4:.075);
+  scene.userData.hemi.intensity=st.nv?7.5:(spec.on?1.25:.055);
   el("nvv").style.opacity=st.nv?1:0; el("nvg").style.opacity=st.nv?.14:0;
   el("nvring").style.opacity=st.nv?1:0;
   el("vig").style.opacity=st.nv?.18:1;
-  scene.fog.density=st.nv?0.00016:0.0026;
+  scene.fog.density=st.nv?0.00016:(spec.on?0.0011:0.0026);
   scene.background.setHex(st.nv?0x08240f:0x04070c);
   if(scene.userData.nvStars) scene.userData.nvStars.visible=st.nv;
   if(scene.userData.baseStars){
@@ -2707,7 +2870,7 @@ function tick(){
     for(const q of r.atv.userData.pods)q.material.color.setHex(p.lights?0xfff2c8:0x2a2a24);
     r.glow.position.set(r.atv.position.x,hy+12,r.atv.position.z);
     const dd=Math.hypot(st.px-p.px,st.py-p.py)*S;
-    r.glow.material.opacity=(p.lights&&!p.out)?Math.max(0,Math.min(.40,.44*(1-dd/300))):0;
+    r.glow.material.opacity=(spec.on||!p.lights||p.out)?0:Math.max(0,Math.min(.40,.44*(1-dd/300)));
     r.glow.scale.setScalar(40+dd*.12);
   }
   // AI machines
@@ -2722,7 +2885,7 @@ function tick(){
     for(const q of seekerAIRig.atv.userData.pods)q.material.color.setHex(0xfff2c8);
     seekerAIRig.glow.position.set(seekerAIRig.atv.position.x,sy+12,seekerAIRig.atv.position.z);
     const dd=Math.hypot(st.px-s.px,st.py-s.py)*S;
-    seekerAIRig.glow.material.opacity=Math.max(0,Math.min(.42,.46*(1-dd/320)));
+    seekerAIRig.glow.material.opacity=spec.on?0:Math.max(0,Math.min(.42,.46*(1-dd/320)));
     seekerAIRig.glow.scale.setScalar(42+dd*.13);
   }else seekerAIRig.glow.material.opacity=0;
 
@@ -2748,7 +2911,9 @@ function tick(){
   if(extractRing.visible)extractRing.material.opacity=.4+Math.sin(st.t*2.6)*.22;
 
   const fwd=new THREE.Vector3(Math.cos(st.hdg),0,Math.sin(st.hdg));
-  if(camMode===0){
+  if(spec.on){
+    const tg=specCam(dt,st); specLight(tg); specBeacon(tg,st); specHUD(tg);
+  }else if(camMode===0){
     const want=me.atv.position.clone().add(fwd.clone().multiplyScalar(-8.6)).add(new THREE.Vector3(0,4.7,0));
     cam.position.lerp(want,Math.min(1,dt*4.2));
     cam.lookAt(me.atv.position.clone().add(fwd.clone().multiplyScalar(14)).add(new THREE.Vector3(0,1.5,0)));
@@ -2768,8 +2933,10 @@ function tick(){
 
 function updateHUD(nearestPx){
   const st=state;
-  el("roleN").textContent=myRole.toUpperCase();
-  el("roleN").style.color=myRole==="seeker"?"#ff4d42":myRole==="kubota"?"#a9d4ff":"#34e0c8";
+  el("stat").style.display=spec.on?"none":"";       // no machine, no machine readout
+  el("roleN").textContent=spec.on?"SPECTATOR":myRole.toUpperCase();
+  el("roleN").style.color=spec.on?"#cfe6dc":
+    myRole==="seeker"?"#ff4d42":myRole==="kubota"?"#a9d4ff":"#34e0c8";
   el("hl").textContent=st.lights?"ON":"OFF"; el("hl").className=st.lights?"on":"off";
   el("nvN").textContent=st.nv?"ON":"OFF";    el("nvN").className=st.nv?"nv":"off";
   el("engN").textContent=st.crank>0?"CRANKING":(st.engine?"RUNNING":"OFF");
@@ -2869,6 +3036,32 @@ function drawMap(g,W,H,big){
   }
   // anyone running lights is visible on the map — that's the whole point
   const show=(px,py,col,r)=>{g.fillStyle=col;g.beginPath();g.arc(px*sx,py*sy,r*k,0,6.29);g.fill();};
+
+  /* you're out — no reason to keep anything from you. Everybody, lit or not,
+     with the one you're watching ringed. */
+  if(spec.on){
+    for(const t of specTargets()){
+      const seek=t.role==="seeker";
+      show(t.px,t.py,seek?"rgba(255,90,70,.95)":"rgba(120,240,210,.9)",seek?6:4.8);
+      g.save();g.translate(t.px*sx,t.py*sy);g.rotate(t.hdg);
+      g.fillStyle=seek?"rgba(255,150,120,.85)":"rgba(150,255,225,.8)";
+      g.beginPath();g.moveTo(9*k,0);g.lineTo(1*k,3.4*k);g.lineTo(1*k,-3.4*k);g.closePath();g.fill();
+      g.restore();
+      if(t.key===spec.key){
+        g.strokeStyle=seek?"rgba(255,140,110,.9)":"rgba(150,255,225,.9)";g.lineWidth=1.6*k;
+        g.beginPath();g.arc(t.px*sx,t.py*sy,11*k,0,6.29);g.stroke();
+      }
+    }
+    if(spec.mode===2){                       // where the free camera is looking from
+      const fx=toPX(spec.fx),fy=toPY(spec.fz);
+      g.strokeStyle="rgba(255,225,140,.8)";g.lineWidth=1.4*k;
+      g.beginPath();g.arc(fx*sx,fy*sy,5.5*k,0,6.29);g.stroke();
+      g.beginPath();g.moveTo(fx*sx-8*k,fy*sy);g.lineTo(fx*sx+8*k,fy*sy);
+      g.moveTo(fx*sx,fy*sy-8*k);g.lineTo(fx*sx,fy*sy+8*k);g.stroke();
+    }
+    return;
+  }
+
   for(const[,p]of players){
     if(p.out||!p.role)continue;
     if(p.role==="seeker"){const d=Math.hypot(st.px-p.px,st.py-p.py);
@@ -2919,6 +3112,20 @@ addEventListener("keydown",e=>{
   const k=e.code.toLowerCase();
   if(document.activeElement&&document.activeElement.tagName==="INPUT")return;
   keys[k]=true;
+  /* up on the camera the keys mean something else — no lights to flip, no
+     engine to crank, no smoke to throw. Radio and map still work. */
+  if(spec.on){
+    if(k==="space")e.preventDefault();
+    if(!e.repeat){
+      if(k==="keyc"){ spec.mode=(spec.mode+1)%SPECMODES.length; spec.snap=true; }
+      if(spec.mode!==2&&k==="keya") specCycle(-1);
+      if(spec.mode!==2&&k==="keyd") specCycle(1);
+    }
+    if(k==="keym")toggleMap();
+    if(k==="escape"&&paused)toggleMap();
+    if(k==="keyt"&&!e.repeat){setPTT(true);srStart();}
+    return;
+  }
   if(k==="keyl"&&state)state.lights=!state.lights;
   if(k==="keyn"&&state){ if(myRole==="seeker"){ state.nv=!state.nv; nvTick(state.nv); }
     else say("◂ NIGHT VISION IS SEEKER-ONLY GEAR ▸",2.2); }
