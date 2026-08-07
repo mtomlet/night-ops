@@ -230,7 +230,7 @@
     <div class="k"><b>C</b>chase / first-person</div>
     <div class="k"><b>SPACE</b>radio a contact</div>
     <div class="k"><b>G</b>simple ⇄ geared</div>
-    <div class="k"><b>T</b>hold — talk on the radio</div>
+    <div class="k"><b>T</b>hold — talk on the radio. Your side answers.</div>
     <div class="k"><b>X</b>kill / start the engine</div>
     <div class="k"><b>F</b>throw a smoke grenade (hiders)</div>
   </div>
@@ -2050,6 +2050,120 @@ function smartHider(h,st,dt,i){
   trackVel(h,dt);
 }
 
+/* ==========================================================================
+   AI RADIO
+   Key the mic and your side answers. They're riding the same farm you are,
+   so what they say is whatever is actually true for them right then — where
+   they're sitting, whether they've got eyes on him, which way he was headed.
+   Same channel rules as everyone else: as a hider you hear your side and
+   you hear the seeker's radio. As the seeker you hear nothing back.
+   ========================================================================== */
+const AI_NAMES=["COLT","DEACON","WYATT"];
+const LANDMARKS=[
+  [660,232,"the north field"],[478,340,"the top of the west field"],
+  [382,566,"pump one, west field"],[348,706,"partway down the west trail"],
+  [318,900,"the low end of the west trail"],[348,1068,"the foot of the hill"],
+  [506,376,"the hub"],[535,802,"the middle of the bottom field"],
+  [655,1050,"the bottom field"],[551,879,"the top of the back trail"],
+  [676,812,"the back trail"],[830,884,"pump two, the neck"],
+  [834,752,"the upper neck"],[856,690,"the east field"],[1098,502,"the far east field"],
+  [888,1002,"the ramp"],[923,1220,"pump three, south field"],
+  [919,1420,"the bottom of the south field"],[838,1372,"the choke"],
+  [962,1248,"the mud pit"],[892,1349,"the fire pit"]
+];
+function where(px,py){
+  let b=LANDMARKS[0],bd=Infinity;
+  for(const l of LANDMARKS){const d=(l[0]-px)**2+(l[1]-py)**2;if(d<bd){bd=d;b=l;}}
+  return b[2];
+}
+const COMPASS=["east","southeast","south","southwest","west","northwest","north","northeast"];
+function heading(vx,vy){
+  if(Math.hypot(vx,vy)<8) return null;
+  let a=Math.atan2(vy,vx); if(a<0)a+=6.2832;
+  return COMPASS[Math.round(a/0.7854)%8];
+}
+/* one at a time, with a squelch break between, like a real channel */
+const RQ=[];
+function radioIn(name,msg,delay){
+  if(RQ.length>4) return;
+  RQ.push({name,msg,at:(state?state.t:0)+(delay||0)});
+}
+function stepRadio(dt){
+  if(!state||state.radioT>0||!RQ.length) return;
+  for(let i=0;i<RQ.length;i++){
+    if(state.t>=RQ[i].at){
+      const m=RQ.splice(i,1)[0];
+      if(actx&&eng){ squelch(true); setTimeout(()=>{try{squelch(false);}catch(e){}},240); }
+      say(m.name+": "+m.msg,3.1);
+      return;
+    }
+  }
+}
+/* what one rider can honestly report right now */
+function sitrep(h,i,st){
+  const me=AI_NAMES[i%AI_NAMES.length];
+  const sk=st.ai.seek;
+  const seekerLive=!humanSeekerExists();
+  if(seekerLive&&sk){
+    const d=Math.hypot(sk.px-h.px,sk.py-h.py)*S;
+    const dir=heading(sk.vx||0,sk.vy||0);
+    if(d<95) return [me,"he's right on top of me at "+where(sk.px,sk.py)+" — I'm gone"];
+    if(d<190&&losOpen(h.px,h.py,sk.px,sk.py))
+      return [me,"eyes on him, "+Math.round(d)+" yards off at "+where(sk.px,sk.py)+
+                 (dir?", running "+dir:"")];
+    if(sk.mode==="chase"&&d<230)
+      return [me,"he's working "+where(sk.px,sk.py)+" and he's moving — watch yourself"];
+    if(d<170) return [me,"I can hear him somewhere around "+where(sk.px,sk.py)];
+  }
+  const c=canMeshes.find(x=>!x.got&&x.fill>0.05);
+  if(c&&Math.random()<0.4) return [me,"nothing over here. "+where(h.px,h.py)+
+                                      ", and that tank's sitting about "+Math.round(c.fill*100)+"%"];
+  return [me,"clear at "+where(h.px,h.py)+(h.engine===false?", motor's off, just listening":"")];
+}
+/* you keyed the mic — your side comes back */
+function aiAnswer(){
+  if(!state||!joined) return;
+  if(myRole!=="hider"){                      // seekers don't get answers on this channel
+    if(actx&&eng) squelch(false);
+    return;
+  }
+  const live=[];
+  state.ai.hiders.forEach((h,i)=>{ if(!h.out) live.push([h,i]); });
+  if(!live.length){ radioIn("RADIO","…nothing but static. You're the last one out here.",0.5); return; }
+  const first=live[(Math.random()*live.length)|0];
+  const r1=sitrep(first[0],first[1],state);
+  radioIn(r1[0],r1[1],0.55+Math.random()*0.5);
+  if(live.length>1&&Math.random()<0.6){
+    let second=live[(Math.random()*live.length)|0];
+    if(second===first) second=live[(live.indexOf(first)+1)%live.length];
+    const r2=sitrep(second[0],second[1],state);
+    radioIn(r2[0],r2[1],3.9+Math.random()*0.8);
+  }
+}
+/* nobody waits to be asked when the lights come around the corner */
+function aiContactCalls(st,dt){
+  if(myRole==="seeker"||!joined||!huntPhase()) return;
+  const sk=st.ai.seek; if(humanSeekerExists()||!sk) return;
+  st.ai.hiders.forEach((h,i)=>{
+    h.callT=(h.callT||0)-dt;
+    if(h.out||h.callT>0) return;
+    const d=Math.hypot(sk.px-h.px,sk.py-h.py)*S;
+    if(d<175&&losOpen(h.px,h.py,sk.px,sk.py)){
+      h.callT=26+Math.random()*14;
+      const dir=heading(sk.vx||0,sk.vy||0);
+      radioIn(AI_NAMES[i%AI_NAMES.length],
+        (d<80?"contact — he's on me at ":"contact — headlights at ")+where(sk.px,sk.py)+
+        (dir?", headed "+dir:""),0.2);
+    }
+  });
+  /* the seeker keys his own mic now and then, and hiders hear that channel */
+  sk.talkT=(sk.talkT||0)-dt;
+  if(sk.talkT<=0&&sk.mode==="chase"&&Math.random()<0.02){
+    sk.talkT=30+Math.random()*25;
+    radioIn("SEEKER","I've got lights moving at "+where(sk.mx||sk.px,sk.my||sk.py)+". Closing.",0.1);
+  }
+}
+
 function bar(f){const n=Math.round(Math.max(0,Math.min(1,f))*10);
   return "["+"\u2588".repeat(n)+"\u00b7".repeat(10-n)+"]";}
 function say(msg,dur){ if(!state)return; state.radioT=dur||2.6;
@@ -2316,6 +2430,7 @@ function tick(){
     }
     if(st.pingT>0)st.pingT-=dt;
     if(st.radioT>0){st.radioT-=dt;if(st.radioT<=0)el("radio").classList.remove("show");}
+    aiContactCalls(st,dt); stepRadio(dt);
 
     /* objectives (hiders only) */
     if(myRole==="hider"&&!ghost&&RS.phase!=="over"){
@@ -2665,7 +2780,8 @@ function shift(d){
   if(GEARS[state.gear].max<0&&state.spd>2) state.gear=GN;
   if(state.gear!==was){ clunk(d>0); state.shiftKick=d>0?0.22:0.10; }
 }
-addEventListener("keyup",e=>{const k=e.code.toLowerCase();keys[k]=false;if(k==="keyt")setPTT(false);});
+addEventListener("keyup",e=>{const k=e.code.toLowerCase();keys[k]=false;
+  if(k==="keyt"){setPTT(false);aiAnswer();}});
 addEventListener("blur",()=>{for(const k in keys)keys[k]=false;setPTT(false);});
 addEventListener("resize",()=>{if(!renderer)return;
   cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
