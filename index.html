@@ -1756,10 +1756,11 @@ function connect(){
       const wasPhase=RS.phase;
       RS=Object.assign(RS,m);
       // a fresh round started — everybody resets together
-      if(m.id!==lastRoundId && m.phase==="running"){
+      if(m.id!==lastRoundId && (m.phase==="hide"||m.phase==="running")){
         lastRoundId=m.id;
-        respawnForRound();
-        say("◂ ROUND "+m.id+" — GO ▸",3.0);
+        respawnForRound();                       // puts spectators back on a machine
+        say(m.phase==="hide" ? "◂ ROUND "+m.id+" — 15 SECONDS TO HIDE ▸"
+                             : "◂ ROUND "+m.id+" — GO ▸",3.4);
       }
       if(m.phase==="over" && wasPhase==="running"){
         const w=m.winner==="seekers"?"SEEKER TAKES IT":"HIDERS SURVIVE";
@@ -1768,10 +1769,16 @@ function connect(){
       // server is the authority on who's out
       if(state){
         if(m.out && m.out[myId] && !state.out){ state.out=true; goGhost(); }
-        if(m.phase==="running" && (!m.out || !m.out[myId]) && state.out && m.id===lastRoundId){
-          state.out=false;
+        if((m.phase==="hide"||m.phase==="running") && !(m.out&&m.out[myId]) && state.out){
+          state.out=false; specExit();           // reinstated — off the camera, back on a machine
         }
+        // the round fell apart (seeker left) — nobody stays eliminated in a lobby
+        if(m.phase==="waiting" && state.out){ state.out=false; specExit(); respawnForRound(); }
       }
+      /* everyone else's status, straight from the server. Without this a player
+         stays struck off the roster and missing from the spectator list for the
+         rest of the night after one bad round. */
+      for(const[id,p]of players) p.out=!!(m.out&&m.out[id]);
       // shared tank progress — ONLY when the server is actually running the round,
       // otherwise its empty [0,0,0] heartbeat resets what you just filled
       if(m.tanks && m.phase==="running") for(let i=0;i<canMeshes.length&&i<m.tanks.length;i++){
@@ -2527,6 +2534,7 @@ function tick(){
     st.t+=dt;
     const isKub=myRole==="kubota";
     const ghost=!!st.out;
+    if(spec.on&&!ghost) specExit();              // never leave anyone stranded on the camera
 
     /* ============ WIPEOUT — you're on your side, ride it out ============ */
     if(st.wipe>0){
