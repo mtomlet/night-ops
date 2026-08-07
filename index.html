@@ -230,7 +230,9 @@
     <div class="k"><b>C</b>chase / first-person</div>
     <div class="k"><b>SPACE</b>radio a contact</div>
     <div class="k"><b>G</b>simple ⇄ geared</div>
-    <div class="k"><b>T</b>hold — talk on the radio. Your side answers.</div>
+    <div class="k"><b>T</b>hold — talk on the radio. Ask them out loud:
+      <i style="color:#8fa89a;font-style:normal">"where is he", "am I clear", "how are the tanks",
+      "go dark", "scatter", "come to me", "distract him", "get to the choke"</i></div>
     <div class="k"><b>X</b>kill / start the engine</div>
     <div class="k"><b>F</b>throw a smoke grenade (hiders)</div>
   </div>
@@ -1403,7 +1405,9 @@ async function initMic(){
       send({t:"v",d:b64enc(new Uint8Array(pcm.buffer,pcm.byteOffset,pcm.byteLength))});
     };
     micReady=true;
-    el("micState").textContent="RADIO READY — HOLD [T]";
+    initSpeech();
+    el("micState").textContent=srOK?"RADIO READY — HOLD [T] AND ASK THEM SOMETHING"
+                                   :"RADIO READY — HOLD [T]";
     el("micState").style.color="#34e0c8";
   }catch(err){
     el("micState").textContent="MIC BLOCKED — RADIO OFF";
@@ -2019,6 +2023,22 @@ function smartHider(h,st,dt,i){
   if(myRole==="seeker"&&!st.out) consider(st.px,st.py);
   for(const[,p]of players) if(p.role==="seeker"&&!p.out) consider(p.px,p.py);
 
+  /* you told them to do something — they do it, unless he's right on them */
+  if(h.order){
+    if(st.t>=h.order.until) h.order=null;
+    else if(td<125*M2P&&h.order.kind!=="loud"){
+      h.order=null;
+      radioIn(AI_NAMES[i%AI_NAMES.length],"breaking off, he's on me at "+where(h.px,h.py)+".",0.2);
+    }else{
+      const o=h.order;
+      if(o.kind==="dark"){ h.lights=false; h.engine=false; h.mps=0; trackVel(h,dt); return; }
+      if(o.kind==="loud"){ h.lights=true; h.engine=true; h.mps=13.5;   // pull him off you
+        driveAt(h,o.pt[0],o.pt[1],h.mps,dt); trackVel(h,dt); return; }
+      h.lights=false; h.engine=true; h.mps=11.5;                        // "goto"
+      if(driveAt(h,o.pt[0],o.pt[1],h.mps,dt)){ h.order=null; h.mps=0; h.engine=false; }
+      trackVel(h,dt); return;
+    }
+  }
   if(!huntPhase()){                                  // 15 seconds to get off the road
     if(!h.spot) h.spot=COVER[(i*4+1)%COVER.length];
     h.lights=false; h.engine=true; h.mps=9;
@@ -2120,8 +2140,52 @@ function sitrep(h,i,st){
                                       ", and that tank's sitting about "+Math.round(c.fill*100)+"%"];
   return [me,"clear at "+where(h.px,h.py)+(h.engine===false?", motor's off, just listening":"")];
 }
+/* --------------------------------------------------------------------------
+   They listen to what you actually said. Chrome transcribes it on the fly,
+   we read the intent out of it, and the answer comes off live sim state.
+   No speech engine (Firefox, some Safari builds) and you still get a plain
+   sitrep, so the radio is never dead.
+   ------------------------------------------------------------------------ */
+let SR=null, srOn=false, srHeard="", srOK=false;
+function initSpeech(){
+  const C=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!C) return;
+  try{ SR=new C(); }catch(e){ return; }
+  SR.lang="en-US"; SR.continuous=true; SR.interimResults=true; SR.maxAlternatives=1;
+  SR.onresult=ev=>{
+    let s="";
+    for(let i=ev.resultIndex;i<ev.results.length;i++) s+=ev.results[i][0].transcript;
+    srHeard=(srHeard+" "+s).trim().slice(-140);
+  };
+  SR.onerror=()=>{ srOn=false; };
+  SR.onend=()=>{ srOn=false; };
+  srOK=true;
+}
+function srStart(){ if(!SR||srOn) return; srHeard="";
+  try{ SR.start(); srOn=true; }catch(e){ srOn=false; } }
+function srStop(){ if(!SR||!srOn) return; try{ SR.stop(); }catch(e){} srOn=false; }
+
+const has=(s,...w)=>w.some(x=>s.indexOf(x)>=0);
+/* short words need boundaries — "ok" lives inside "looking" and "smoke" */
+const word=(s,...w)=>w.some(x=>new RegExp("(^| )"+x+"( |$)").test(s));
+function landmarkIn(s){
+  let best=null,bl=0;
+  for(const l of LANDMARKS){
+    const words=l[2].replace(/^(the|pump \w+,) /,"").trim();
+    if(s.indexOf(words)>=0&&words.length>bl){ bl=words.length; best=l; }
+  }
+  if(best) return best;
+  const alias=[["choke",[838,1372]],["neck",[830,884]],["mud",[962,1248]],["fire",[892,1349]],
+               ["back trail",[676,812]],["ramp",[888,1002]],["east field",[856,690]],
+               ["west field",[382,566]],["north field",[660,232]],["south field",[923,1220]],
+               ["bottom field",[655,1050]],["hill",[348,1068]],["hub",[506,376]]];
+  for(const[k,p]of alias) if(s.indexOf(k)>=0) return [p[0],p[1],k];
+  return null;
+}
+function order(h,kind,pt,secs){ h.order={kind,pt,until:(state?state.t:0)+(secs||22)}; }
+
 /* you keyed the mic — your side comes back */
-function aiAnswer(){
+function aiAnswer(said){
   if(!state||!joined) return;
   if(myRole!=="hider"){                      // seekers don't get answers on this channel
     if(actx&&eng) squelch(false);
@@ -2130,13 +2194,117 @@ function aiAnswer(){
   const live=[];
   state.ai.hiders.forEach((h,i)=>{ if(!h.out) live.push([h,i]); });
   if(!live.length){ radioIn("RADIO","…nothing but static. You're the last one out here.",0.5); return; }
-  const first=live[(Math.random()*live.length)|0];
-  const r1=sitrep(first[0],first[1],state);
-  radioIn(r1[0],r1[1],0.55+Math.random()*0.5);
-  if(live.length>1&&Math.random()<0.6){
-    let second=live[(Math.random()*live.length)|0];
-    if(second===first) second=live[(live.indexOf(first)+1)%live.length];
-    const r2=sitrep(second[0],second[1],state);
+
+  const s=(said||"").toLowerCase().replace(/[^a-z0-9' ]/g," ").replace(/\s+/g," ").trim();
+  if(s) say("YOU: "+s,2.0);
+  const pick=()=>live[(Math.random()*live.length)|0];
+  const name=i=>AI_NAMES[i%AI_NAMES.length];
+  const st=state, sk=st.ai.seek, seekerLive=!humanSeekerExists();
+  const d0=0.55+Math.random()*0.4;
+
+  /* ---------- orders ---------- */
+  if(has(s,"go dark","lights out","kill your lights","shut it off","shut em off","kill it","quiet","go quiet")){
+    live.forEach(([h,i],n)=>{ order(h,"dark",null,26);
+      radioIn(name(i),n?"motor's off.":"copy, going dark.",d0+n*3.6); });
+    return;
+  }
+  if(has(s,"scatter","split up","spread out","break up","get out of here")){
+    live.forEach(([h,i],n)=>{
+      let best=null,bs=-1e9;
+      for(const c of COVER){ const sc=(seekerLive?Math.hypot(c[0]-sk.px,c[1]-sk.py):0)
+                                     -Math.hypot(c[0]-h.px,c[1]-h.py)*0.9-(n*37);
+        if(sc>bs){bs=sc;best=c;} }
+      order(h,"goto",best,24);
+      radioIn(name(i),"scattering — "+where(best[0],best[1])+".",d0+n*3.6);
+    });
+    return;
+  }
+  if(has(s,"come to me","regroup","come here","on me","get over here","form up","link up")){
+    live.forEach(([h,i],n)=>{ order(h,"goto",[st.px,st.py],26);
+      radioIn(name(i),"on my way to "+where(st.px,st.py)+".",d0+n*3.6); });
+    return;
+  }
+  if(has(s,"distract","draw him","pull him","make some noise","decoy","bait him","get his attention")){
+    let bh=null,bi=0,bd=1e9;
+    live.forEach(([h,i])=>{ const d=seekerLive?Math.hypot(h.px-sk.px,h.py-sk.py):Math.hypot(h.px-st.px,h.py-st.py);
+      if(d<bd){bd=d;bh=h;bi=i;} });
+    let far=COVER[0],fs=-1e9;
+    for(const c of COVER){ const sc=Math.hypot(c[0]-st.px,c[1]-st.py); if(sc>fs){fs=sc;far=c;} }
+    order(bh,"loud",far,26);
+    radioIn(name(bi),"lighting up and running for "+where(far[0],far[1])+". Go do your thing.",d0);
+    return;
+  }
+  if(has(s,"work the pump","get the fuel","fill the tank","get the tanks","fuel up","hit the pumps")){
+    live.forEach(([h,i],n)=>{
+      let bp=PUMPS[0],bd=1e9;
+      for(let k=0;k<PUMPS.length;k++){ if(canMeshes[k]&&canMeshes[k].got) continue;
+        const d=Math.hypot(PUMPS[k][0]-h.px,PUMPS[k][1]-h.py); if(d<bd){bd=d;bp=PUMPS[k];} }
+      order(h,"goto",bp,28);
+      radioIn(name(i),"heading for "+where(bp[0],bp[1])+".",d0+n*3.6);
+    });
+    return;
+  }
+  const lm=landmarkIn(s);
+  if(lm&&has(s,"go to","get to","head to","move to","meet me","cover the","watch the","hold the","check the")){
+    const[h,i]=pick(); order(h,"goto",[lm[0],lm[1]],28);
+    radioIn(name(i),"moving to "+lm[2]+".",d0);
+    return;
+  }
+
+  /* ---------- questions ---------- */
+  if(has(s,"where is he","where's he","where he","you see him","see him","got eyes","any contact",
+          "spot him","where the seeker","where's the seeker","is he close","seen him")){
+    if(!seekerLive){ radioIn("RADIO","he's a real player tonight — you're on your own for that.",d0); return; }
+    let bh=null,bi=0,bd=1e9;
+    live.forEach(([h,i])=>{ const d=Math.hypot(h.px-sk.px,h.py-sk.py); if(d<bd){bd=d;bh=h;bi=i;} });
+    const m=bd*S, dir=heading(sk.vx||0,sk.vy||0);
+    if(m<190&&losOpen(bh.px,bh.py,sk.px,sk.py))
+      radioIn(name(bi),"got him — "+Math.round(m)+" yards off me at "+where(sk.px,sk.py)+
+                       (dir?", running "+dir:"")+".",d0);
+    else if(m<230)
+      radioIn(name(bi),"can't see him but he's loud around "+where(sk.px,sk.py)+".",d0);
+    else
+      radioIn(name(bi),"negative. Last I knew he was working "+where(sk.px,sk.py)+", long way off.",d0);
+    return;
+  }
+  if(has(s,"am i clear","behind me","is he near me","on my tail","near me","am i good","anybody behind")){
+    if(!seekerLive){ radioIn("RADIO","no read on that one.",d0); return; }
+    const m=Math.hypot(st.px-sk.px,st.py-sk.py)*S;
+    const[h,i]=pick();
+    radioIn(name(i), m<70?"he is RIGHT there — move!"
+                   : m<150?"he's close, maybe "+Math.round(m)+" yards, "+where(sk.px,sk.py)+"."
+                   : "you're clear. He's way over at "+where(sk.px,sk.py)+".",d0);
+    return;
+  }
+  if(has(s,"tank","fuel","pump","how full","how much")){
+    const done=canMeshes.filter(c=>c.got).length;
+    const part=canMeshes.map((c,k)=>c.got?null:(c.fill>0.03?("number "+(k+1)+" is at "+Math.round(c.fill*100)+"%"):null))
+                        .filter(Boolean);
+    const[h,i]=pick();
+    radioIn(name(i), done+" of 3 filled"+(part.length?", and "+part.join(", "):", nothing started on the rest")+".",d0);
+    return;
+  }
+  if(has(s,"how many","who's left","whos left","anybody left","who's still","how we doing","how many left")){
+    const[h,i]=pick();
+    radioIn(name(i),live.length+" of us still out here"+(st.out?" — you're already burned":"")+
+                    ", plus you.",d0);
+    return;
+  }
+  if(has(s,"where are you","where you at","status","sitrep","check in","report","you good","you alright","everybody good")){
+    live.forEach(([h,i],n)=>{ const r=sitrep(h,i,st); radioIn(r[0],r[1],d0+n*3.7); });
+    return;
+  }
+  if(word(s,"thanks","thank you","copy","roger","good job","nice","got it","okay","ok","yeah","yep")){
+    const[h,i]=pick(); radioIn(name(i),["copy.","standing by.","yep."][(Math.random()*3)|0],d0);
+    return;
+  }
+
+  /* ---------- didn't catch a question: everyone just reports ---------- */
+  const first=pick(), r1=sitrep(first[0],first[1],st);
+  radioIn(r1[0],r1[1],d0);
+  if(live.length>1&&(s?Math.random()<0.35:Math.random()<0.6)){
+    let second=pick(); if(second===first) second=live[(live.indexOf(first)+1)%live.length];
+    const r2=sitrep(second[0],second[1],st);
     radioIn(r2[0],r2[1],3.9+Math.random()*0.8);
   }
 }
@@ -2762,7 +2930,7 @@ addEventListener("keydown",e=>{
     state.smokes--; throwNade(state.px,state.py,state.hdg,state.spd);
     say("◂ SMOKE OUT — "+state.smokes+" LEFT ▸",2.2);
   }
-  if(k==="keyt"&&!e.repeat)setPTT(true);
+  if(k==="keyt"&&!e.repeat){setPTT(true);srStart();}
   if(k==="keyx"&&state&&state.crank<=0){
     if(state.engine){ state.engine=false; state.spd*=.6; engineStop(); say("◂ ENGINE OFF — LISTEN ▸",2.2); }
     else{ state.crank=1.25; engineCrank(); }
@@ -2781,7 +2949,9 @@ function shift(d){
   if(state.gear!==was){ clunk(d>0); state.shiftKick=d>0?0.22:0.10; }
 }
 addEventListener("keyup",e=>{const k=e.code.toLowerCase();keys[k]=false;
-  if(k==="keyt"){setPTT(false);aiAnswer();}});
+  if(k==="keyt"){setPTT(false);srStop();
+    // give the transcriber a beat to hand over the last words
+    setTimeout(()=>{const said=srHeard;srHeard="";aiAnswer(said);},420);}});
 addEventListener("blur",()=>{for(const k in keys)keys[k]=false;setPTT(false);});
 addEventListener("resize",()=>{if(!renderer)return;
   cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
