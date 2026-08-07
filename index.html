@@ -1988,15 +1988,9 @@ function tick(){
 
     /* ---- AI fills the empty seats ---- */
     const aiSeek=!humanSeekerExists();
-    if(aiSeek){
-      const s=st.ai.seek;
-      if(s.memo>0)s.memo-=dt;
-      const hunt=s.memo>0;
-      if(hunt!==(s.mode==="hunt")){s.mode=hunt?"hunt":"patrol";s.path=null;}
-      stepAI(s,dt,hunt?17:12,hunt?[s.mx,s.my]:null);
-      s.sweep=hunt?s.sweep*.86:Math.sin(st.t*1.7)*.58;
-    }
-    for(const h of st.ai.hiders){ if(!h.out) stepAI(h,dt,11,null); }
+    trackVel(st,dt);
+    if(aiSeek) smartSeeker(st.ai.seek,st,dt);
+    for(let i=0;i<st.ai.hiders.length;i++){ const h=st.ai.hiders[i]; if(!h.out) smartHider(h,st,dt,i); }
 
     /* ---- detection ---- */
     const hidden=inBush(st.px,st.py)||inSmoke(st.px,st.py);
