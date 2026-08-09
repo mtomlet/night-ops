@@ -331,6 +331,7 @@
     <div class="k"><b>W / S</b>forward · brake &amp; reverse</div>
     <div class="k"><b>A / D</b>steer</div>
     <div class="k"><b>SHIFT / CTRL</b>up · down through the gears</div>
+    <div class="k"><b>Q</b> or <b>RIGHT MOUSE</b>hold to aim. On the bolt rifle it's the scope.</div>
     <div class="k"><b>L</b>headlights</div>
     <div class="k"><b>N</b>night vision</div>
     <div class="k"><b>M</b>full map</div>
@@ -4228,7 +4229,9 @@ addEventListener("keydown",e=>{
   if(k==="keyc")camMode=camMode?0:1;
   if(k==="keyg"&&state)state.adv=!state.adv;
   if((k==="shiftleft"||k==="shiftright")&&!e.repeat) shift(1);
-  if((k==="controlleft"||k==="controlright"||k==="keyq")&&!e.repeat) shift(-1);
+  if(GUNS&&k==="keyq"){
+    if(!e.repeat&&state){ state.zoom=true; state.scoped=(wep().id==="br"); }
+  }else if((k==="controlleft"||k==="controlright"||k==="keyq")&&!e.repeat) shift(-1);
   if(k==="keye")shift(1);
   if(k==="keyf"&&!e.repeat&&state&&myRole==="hider"&&!state.out&&state.smokes>0){
     state.smokes--; throwNade(state.px,state.py,state.hdg,state.spd);
@@ -4292,6 +4295,7 @@ addEventListener("wheel",e=>{
 },{passive:false});
 addEventListener("keyup",e=>{const k=e.code.toLowerCase();keys[k]=false;
   if(k==="space") firing=false;
+  if(GUNS&&k==="keyq"&&state){ state.zoom=false; state.scoped=false; }
   if(k==="keyt"){setPTT(false);srStop();
     // give the transcriber a beat to hand over the last words
     setTimeout(()=>{const said=srHeard;srHeard="";aiAnswer(said);},420);}});
