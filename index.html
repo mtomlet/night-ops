@@ -2389,7 +2389,9 @@ function smartSeeker(s,st,dt){
       else{
         s.mag--; s.gun=0.85+Math.random()*0.75;
         const m=seenD*S, mover=Math.abs(seen.spd||0);
-        const chance=Math.max(0.05,Math.min(0.5,0.58-m/210-mover/42));
+        const chance=Math.max(0.02,Math.min(0.34,
+          0.55*Math.max(.1,1-Math.pow(m/WEAPONS[0].range,1.35))
+              /(1+Math.pow(mover/4.2,1.6))));
         aiShotFX(s.px,s.py,seen.px,seen.py);
         if(Math.random()<chance) seekerBullet(seen,st);
       }
@@ -3490,16 +3492,53 @@ function battleAI(u,st,dt,name,idx){
   driveAt(u,gx,gy,u.mps,dt);
   u.hdg=Math.atan2(ty-u.py,tx-u.px);
   u.lights=!isDay();
+  /* ---------------------------------------------------------------------
+     Shooting. The old model was distance and nothing else, which is why it
+     felt like an aimbot — it did not care in the slightest whether you were
+     parked or flat out. Four things decide a shot now, and the one that
+     matters most is how fast the target is moving.
+     --------------------------------------------------------------------- */
+  if(u.mag===undefined){ u.mag=W.mag; u.rel=0; }
+  if(u.rel>0){ u.rel-=dt; if(u.rel<=0) u.mag=W.mag; }
+
+  const bearing=Math.atan2(ty-u.py,tx-u.px);
+  if(u.lastBear!==undefined){
+    let db=bearing-u.lastBear;
+    while(db>Math.PI)db-=6.2832; while(db<-Math.PI)db+=6.2832;
+    /* cutting across his line throws the tracking off; driving straight at
+       him or straight away barely moves the bearing and lets him settle */
+    u.track=Math.abs(db)>0.05 ? Math.max(0,(u.track||0)-Math.abs(db)*8)
+                              : (u.track||0)+dt;
+  }
+  u.lastBear=bearing;
+
   u.gun=(u.gun===undefined?1+Math.random()*2:u.gun)-dt;
-  if(td*S<W.range&&u.gun<=0&&losOpen(u.px,u.py,tx,ty)){
-    u.gun=Math.max(60/W.rpm*2.2,.55)+Math.random()*.6;
-    aiShotFX(u.px,u.py,tx,ty);
-    const chance=Math.max(.05,Math.min(.42,.5-(td*S)/(W.range*1.9)));
-    if(Math.random()<chance){
-      if(meTarget) takeDamage(W.dmg,name);
-      else if(tref){ tref.hp=(tref.hp===undefined?MAXHP:tref.hp)-W.dmg;
-        if(tref.hp<=0){ tref.hp=MAXHP; killFeed(name,"a bot");
-          killBot({ref:tref,role:"hider"}); } }
+  if(td*S<W.range&&u.gun<=0&&u.rel<=0&&losOpen(u.px,u.py,tx,ty)){
+    if(u.mag<=0){ u.rel=W.reload+Math.random()*.6; u.gun=.2; }
+    else{
+      u.mag--;
+      u.gun=Math.max(60/W.rpm*2.4,.62)+Math.random()*.75;
+      const tgtSpd = meTarget?Math.abs(st.spd):Math.abs(tref.mps||0);
+      const ownSpd = Math.abs(u.mps||0);
+      const m=td*S;
+      const rangeF=Math.max(.10,1-Math.pow(m/W.range,1.35));
+      const moveF =1/(1+Math.pow(tgtSpd/4.2,1.6));   // a moving target is a hard target
+      const ownF  =1/(1+ownSpd/22);                  // and he's shooting off a moving machine
+      const settle=Math.min(1,.25+(u.track||0)*.55);
+      const chance=Math.max(.02,Math.min(.34,.52*rangeF*moveF*ownF*settle));
+      const hit=Math.random()<chance;
+      /* a miss goes somewhere near you, not through you — so you can see it */
+      if(hit) aiShotFX(u.px,u.py,tx,ty);
+      else{
+        const off=(6+tgtSpd*2.2)*M2P;
+        aiShotFX(u.px,u.py,tx+(Math.random()-.5)*off,ty+(Math.random()-.5)*off);
+      }
+      if(hit){
+        if(meTarget) takeDamage(W.dmg,name);
+        else if(tref){ tref.hp=(tref.hp===undefined?MAXHP:tref.hp)-W.dmg;
+          if(tref.hp<=0){ tref.hp=MAXHP; killFeed(name,"a bot");
+            killBot({ref:tref,role:"hider"}); } }
+      }
     }
   }
 }
