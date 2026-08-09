@@ -225,6 +225,12 @@ server.on("upgrade", (req, sock) => {
         /* tracer + report for everyone else. No authority here — a shot that
            actually lands arrives separately as a tag or a down. */
         msg.id = id; broadcast(msg, id);
+      } else if (msg.t === "hit") {
+        /* one player put rounds into another. The shooter reports it; the
+           victim's own client decides what that does to them. */
+        const target = clients.get(msg.target);
+        if (target) wsSend(target.sock, JSON.stringify(
+          { t: "hit", id, dmg: msg.dmg | 0, name: me.name }));
       } else if (msg.t === "down") {
         /* a hider put one in the seeker: he's stopped for a few seconds */
         const target = clients.get(msg.target);

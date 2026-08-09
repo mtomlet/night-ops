@@ -72,6 +72,34 @@
   #ammoR{display:block;font-size:10px;letter-spacing:.22em;color:#ffd76a;
          font-style:normal;visibility:hidden}
   #ammo.low #ammoN{color:#ff8a70}
+  #cross.hit i{background:#ff5a44}
+  #hurt{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity .25s;
+        background:radial-gradient(ellipse at center,transparent 34%,rgba(150,10,6,.72) 100%)}
+  #hpbar{right:22px;bottom:170px;width:178px;height:16px;background:rgba(8,12,10,.72);
+         border:1px solid rgba(255,255,255,.14);opacity:0;transition:opacity .2s}
+  #hpbar.show{opacity:1}
+  #hpfill{position:absolute;left:0;top:0;bottom:0;width:100%;background:#34e0c8;
+          transition:width .12s,background .2s}
+  #hpbar span{position:absolute;right:6px;top:1px;font-size:10px;color:#0a1410;
+              letter-spacing:.1em}
+  #wrack{left:22px;bottom:22px;opacity:0;transition:opacity .2s}
+  #wrack.show{opacity:1}
+  #wrack .w{font-size:11px;letter-spacing:.14em;color:#5f6f66;padding:2px 0}
+  #wrack .w b{color:#8fa89a;margin-right:8px}
+  #wrack .w.on{color:#eef5ea} #wrack .w.on b{color:#ffd76a}
+  #wrack .w i{font-style:normal;color:#4a564d;margin-left:8px;font-size:10px}
+  #feed{right:22px;top:64px;text-align:right;opacity:0;transition:opacity .3s}
+  #feed.show{opacity:1}
+  #feed div{font-size:11px;letter-spacing:.1em;color:#8fa89a;padding:2px 0}
+  #feed b{color:#eef5ea} #feed i{color:#ff8a70;font-style:normal;margin:0 5px}
+  #score{top:64px;left:22px;font-size:11px;letter-spacing:.16em;color:#8fa89a;
+         opacity:0;transition:opacity .3s}
+  #score.show{opacity:1}
+  #score b{color:#34e0c8;font-size:17px;margin-right:4px}
+  #score i{font-style:normal;color:#ff8a70;font-size:17px;margin:0 4px 0 14px}
+  #lockHint{top:58%;left:0;right:0;text-align:center;font-size:12px;letter-spacing:.24em;
+            color:#ffd76a;opacity:0;transition:opacity .25s}
+  #lockHint.show{opacity:.9}
 
   #specBar{bottom:22px;left:50%;transform:translateX(-50%);text-align:center;
            background:rgba(6,11,9,.82);border:1px solid rgba(120,240,210,.28);
@@ -204,8 +232,14 @@
 
 <div class="hud" id="alert"></div>
 <div class="hud" id="radio"></div>
+<div id="hurt"></div>
 <div class="hud" id="cross"><i></i><i></i><i></i><i></i><b></b></div>
 <div class="hud" id="ammo"><span id="ammoN">8</span><span id="ammoS">/ 8</span><i id="ammoR">RELOADING</i></div>
+<div class="hud" id="hpbar"><i id="hpfill"></i><span id="hpN">100</span></div>
+<div class="hud" id="wrack"></div>
+<div class="hud" id="feed"></div>
+<div class="hud" id="score"></div>
+<div class="hud" id="lockHint">CLICK TO TAKE THE GUN</div>
 <div class="hud" id="specBar"><div id="specWho"></div><div id="specHint"></div></div>
 <div class="hud" id="ptt">◉ TRANSMITTING</div>
 <div class="hud" id="rx"></div>
@@ -240,6 +274,10 @@
   </div>
   <div class="nameRow">
     <input id="nameIn" maxlength="14" placeholder="YOUR NAME">
+    <select id="modeIn">
+      <option value="seek" selected>HIDE &amp; SEEK — the farm at night</option>
+      <option value="battle">BATTLE — the Basin, everybody armed</option>
+    </select>
     <select id="mapIn">
       <option value="night" selected>NIGHT — headlights and dark</option>
       <option value="day">DAY — broad daylight, no hiding in the dark</option>
@@ -360,6 +398,7 @@ function dSeg(x,y,a,b){
   return Math.hypot(x-(a[0]+vx*t),y-(a[1]+vy*t));
 }
 function rawOpen(x,y){
+  if(battleMode()) return arenaOpen(x,y);
   if(x<10||y<10||x>1462||y>1536) return false;
   for(const f of FIELDS) if(inPoly(x,y,f)) return true;
   for(const m of MUD) if((x-m[0])**2+(y-m[1])**2 < m[2]*m[2]) return true;
@@ -467,6 +506,7 @@ function ledgeAt(x,y){
   return -LEDGE.drop*0.5*(t+1)*fade;
 }
 function height(x,y){
+  if(battleMode()) return arenaHeight(x,y);
   let num=0,den=0;
   for(let i=0;i<HP.length;i++){
     const dx=x-HP[i][0],dy=y-HP[i][1],d=dx*dx+dy*dy+900,w=1/(d*d)*1e11;
@@ -582,6 +622,7 @@ const QUAL={
 /* Two things you pick before you drop in. Night is the original game and is
    untouched by any of this; day changes how he finds you, because a headlight
    beam means nothing at noon. */
+let MODE=localStorage.getItem("nightops.mode")||"seek";
 let MAPMODE=localStorage.getItem("nightops.map")||"night";
 let GUNS=localStorage.getItem("nightops.guns")==="on";
 const isDay=()=>MAPMODE==="day";
@@ -722,20 +763,20 @@ function addChunked(spots,geo,mat,place){
   return out;
 }
 function buildWorld(tex){
-  const DAY=isDay();
+  const DAY=isDay(), BASIN=battleMode();
   scene=new THREE.Scene();
-  scene.background=new THREE.Color(DAY?0x8fb8dd:0x05080d);
-  scene.fog=new THREE.FogExp2(DAY?0xa9c9e4:0x05080d,(DAY?0.00052:0.0026)*Q.fog);
+  scene.background=new THREE.Color(BASIN?0xd7b389:(DAY?0x8fb8dd:0x05080d));
+  scene.fog=new THREE.FogExp2(BASIN?0xdcbd97:(DAY?0xa9c9e4:0x05080d),(DAY?0.00052:0.0026)*Q.fog);
   cam=new THREE.PerspectiveCamera(66,innerWidth/innerHeight,.4,Q.far);
 
-  scene.userData.amb=new THREE.AmbientLight(DAY?0x9fb4c9:0x1a2740,DAY?0.95:.075);
+  scene.userData.amb=new THREE.AmbientLight(BASIN?0xc9a586:(DAY?0x9fb4c9:0x1a2740),DAY?0.95:.075);
   scene.add(scene.userData.amb);
   /* the moon at night, the sun at noon — same light, different day */
-  const moon=new THREE.DirectionalLight(DAY?0xfff3dd:0xaec6e6,DAY?1.15:.085);
-  moon.position.set(DAY?420:-260,DAY?620:340,DAY?280:-200); scene.add(moon);
+  const moon=new THREE.DirectionalLight(BASIN?0xffd9a0:(DAY?0xfff3dd:0xaec6e6),DAY?(BASIN?1.45:1.15):.085);
+  moon.position.set(BASIN?-900:(DAY?420:-260),BASIN?300:(DAY?620:340),BASIN?520:(DAY?280:-200)); scene.add(moon);
   scene.userData.sun=moon;
   scene.userData.hemi=new THREE.HemisphereLight(DAY?0xbcd8f0:0x1d2c44,
-                                               DAY?0x4c5638:0x090f0c,DAY?0.60:.055);
+                                               BASIN?0x6b4a30:(DAY?0x4c5638:0x090f0c),DAY?0.60:.055);
   scene.add(scene.userData.hemi);
 
   /* ---------------- sky ---------------- */
@@ -803,11 +844,11 @@ function buildWorld(tex){
     stars.visible=false; nvStars.visible=false; moonGrp.visible=false;
     const sunGrp=new THREE.Group();
     sunGrp.add(new THREE.Mesh(new THREE.CircleGeometry(38,40),
-      new THREE.MeshBasicMaterial({color:0xfffdf0,fog:false})));
+      new THREE.MeshBasicMaterial({color:BASIN?0xffe6b0:0xfffdf0,fog:false})));
     const flare=new THREE.Sprite(new THREE.SpriteMaterial({color:0xfff0c4,transparent:true,
       opacity:.42,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
     flare.scale.set(210,210,1); sunGrp.add(flare);
-    sunGrp.position.set(700,1080,480); sunGrp.lookAt(0,60,0);
+    sunGrp.position.set(BASIN?-1150:700,BASIN?300:1080,BASIN?640:480); sunGrp.lookAt(0,60,0);
     sunGrp.renderOrder=-1; scene.add(sunGrp);
     const cloudM=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,
       opacity:.5,depthWrite:false,fog:false});
@@ -832,9 +873,19 @@ function buildWorld(tex){
   const pos=gt.attributes.position;
   for(let i=0;i<pos.count;i++)pos.setY(i,height(toPX(pos.getX(i)),toPY(pos.getZ(i))));
   gt.computeVertexNormals();
+  if(battleMode()) tex=arenaTexture();          // the Basin is generated, not photographed
   terrain=new THREE.Mesh(gt,new THREE.MeshPhongMaterial({map:tex,shininess:2,specular:0x0a0f0c}));
   scene.add(terrain);
 
+  if(battleMode()){
+    buildArenaProps(); buildAtmos(); buildFireworks(); buildSmoke(); buildCombat();
+    bushGrid={};
+    /* no fuel run out here, but the rest of the game still reaches for these */
+    const nul=new THREE.Object3D(); nul.visible=false;
+    extractMesh=nul; extractRing=new THREE.Object3D(); extractRing.visible=false;
+    scene.add(extractMesh); scene.add(extractRing);
+    return;                                    // no forest, no bushes, no fuel tanks
+  }
   /* forest */
   const tSpots=[];let guard=0;
   while(tSpots.length<Q.trees&&guard<Q.trees*30){
@@ -906,7 +957,7 @@ function buildWorld(tex){
       d.rotation.set(((px*5)%50)/100,(py*19)%6.28,((py*3)%50)/100);
       d.scale.set(sc*1.35,sc*.95,sc*1.35); });
   buildMud(); buildFirePit(); buildBear(); buildAtmos(); buildFireworks(); buildSmoke();
-  buildGun();
+  buildCombat();
   // spatial buckets so the hide check is cheap
   bushGrid={};
   for(const[px,py]of bushes){
@@ -1757,12 +1808,15 @@ function stepLocalRound(dt){
   if(!joined || serverDriving()) return;
   LR.t+=dt;
   if(LR.phase==="hide"){
+    if(battleMode()){ LR.phase="running"; LR.t=0; return; }
     if(LR.t>=15){
       LR.phase="running"; LR.t=0;
       const s=(myRole==="seeker")?[state.px,state.py]:[state.ai.seek.px,state.ai.seek.py];
       startSignal(s);
     }
   }else if(LR.phase==="running"){
+    if(battleMode()){ if(LR.t>=LR.len) localEnd(
+      (state.kills||0)>=(state.deaths||0)?"seekers":"hiders"); return; }
     const aliveAI=state.ai.hiders.filter(h=>!h.out).length;
     if(myRole==="seeker"){
       if(aliveAI===0) localEnd("seekers");
@@ -1828,12 +1882,15 @@ function connect(){
       p.px=m.x;p.py=m.y;p.hdg=m.h;p.lights=!!m.l;p.nv=!!m.v;p.role=m.r;p.out=!!m.o;p.rig=m.k||"rancher";
       p.spd=m.sp||0; p.engine=m.e===undefined?true:!!m.e;
       p.name=p.name||("P"+m.id);p.t=now;players.set(m.id,p);
+    }else if(m.t==="hit"){
+      if(GUNS) takeDamage(m.dmg|0,m.name||"SOMEBODY");
     }else if(m.t==="shot"){
       if(m.from&&m.to&&tracerPool){
         const f=new THREE.Vector3(m.from[0],m.from[1],m.from[2]);
         const t=new THREE.Vector3(m.to[0],m.to[1],m.to[2]);
         tracer(f,t,false);
-        if(state) gunShot(f.distanceTo(cam.position)>55);
+        const W=WEAPONS[m.w|0]||WEAPONS[0];
+        if(state) gunShot(W.tone,f.distanceTo(cam.position)>55);
       }
     }else if(m.t==="down"){
       if(m.target===myId&&state&&myRole==="seeker"&&!state.out){
@@ -1908,7 +1965,7 @@ function send(o){ if(netOK&&ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
 function renderRoster(){
   const rows=[];
   rows.push(`<div class="pr"><span style="color:#eef5ea">${myName||"YOU"} (you)</span>
-    <span class="rl" style="color:${myRole==="seeker"?"#ff4d42":myRole==="kubota"?"#a9d4ff":"#34e0c8"}">${myRole.toUpperCase()}</span></div>`);
+    <span class="rl" style="color:${myRole==="seeker"?"#ff4d42":myRole==="kubota"?"#a9d4ff":"#34e0c8"}">${battleMode()?"FIGHTER":myRole.toUpperCase()}</span></div>`);
   for(const[id,p]of players){
     if(!p.role)continue;
     const c=p.role==="seeker"?"#ff4d42":p.role==="kubota"?"#a9d4ff":"#34e0c8";
@@ -2068,12 +2125,16 @@ function goGhost(){
 }
 function respawnForRound(){
   if(!state) return;
-  const sp=pick(SPAWNS[myRole]||SPAWNS.hider);
+  let sp=battleMode()?ARENA_SPAWNS[(Math.random()*ARENA_SPAWNS.length)|0]
+                    :pick(SPAWNS[myRole]||SPAWNS.hider);
+  if(!drivable(sp[0],sp[1])) sp=nearestDrivable(sp[0],sp[1]);
   state.px=sp[0]; state.py=sp[1]; state.spd=0; state.out=false;
   specExit();
   state.wipe=0; state.air=false; state.cans=0; state.phase="collect";
   state.engine=true; state.crank=0; state.mudScreen=0;
-  state.ammo=MAG; state.reload=0; state.down=0; state.kick=0;
+  state.mags=WEAPONS.map(w=>w.mag); state.ammo=wep().mag;
+  state.reload=0; state.cool=0; state.down=0; state.kick=0;
+  state.hp=MAXHP; state.respawn=0; el("hurt").style.opacity=0;
   state.smokes=2; state.beamHold=0; state.lock={}; nades.length=0;
   for(const c of canMeshes){c.got=false;c.fill=0;c.grp.visible=true;c.halo.visible=true;}
   extractMesh.visible=false; extractRing.visible=false;
@@ -2091,14 +2152,18 @@ function humanSeekerExists(){
 function aiUnit(px,py){return{px,py,hdg:0,path:null,idx:0,lights:true,sweep:0,memo:0,mx:0,my:0,out:false};}
 function pick(a){return a[(Math.random()*a.length)|0];}
 function freshState(){
-  const sp=pick(SPAWNS[myRole]||SPAWNS.hider);
+  let sp=battleMode()?ARENA_SPAWNS[(Math.random()*ARENA_SPAWNS.length)|0]
+                    :pick(SPAWNS[myRole]||SPAWNS.hider);
+  if(!drivable(sp[0],sp[1])) sp=nearestDrivable(sp[0],sp[1]);
   return{px:sp[0],py:sp[1],hdg:Math.PI/2,spd:0,steer:0,pitch:0,roll:0,
     gear:GN+1,adv:false,rpm:0,thr:0,
     y:0,vy:0,air:false,lastG:0,slip:0,wipe:0,shake:0,mud:0,mudScreen:0,
     beamHold:0,lock:{},bestLock:0,smokes:2,
     prevThr:0,shiftKick:0,squat:0,fuel:0,pumping:-1,
     engine:true,crank:0,
-    ammo:MAG,reload:0,kick:0,down:0,
+    wi:0,mags:WEAPONS.map(w=>w.mag),ammo:WEAPONS[0].mag,reload:0,cool:0,
+    kick:0,down:0,hp:MAXHP,hurt:0,respawn:0,kills:0,deaths:0,
+    tyaw:Math.PI/2,tpitch:0,
     lights:true,nv:false,out:false,stuck:0,
     t:0,cans:0,phase:"collect",tagged:0,
     ai:{seek:aiUnit(838,1372),hiders:[aiUnit(402,498),aiUnit(856,690),aiUnit(923,1220)]},
@@ -2206,7 +2271,7 @@ function aiShotFX(fromPx,fromPy,toPx,toPy){
   const f=new THREE.Vector3(toWX(fromPx),height(fromPx,fromPy)+1.25,toWZ(fromPy));
   const t=new THREE.Vector3(toWX(toPx),height(toPx,toPy)+1.15,toWZ(toPy));
   tracer(f,t,false);
-  gunShot(f.distanceTo(cam.position)>55);
+  gunShot("crack",f.distanceTo(cam.position)>55);
 }
 function smartSeeker(s,st,dt){
   if(s.si===undefined){s.si=0;s.mode="patrol";s.memo=0;s.sweep=0;s.lock={};s.spot=null;}
@@ -2270,11 +2335,11 @@ function smartSeeker(s,st,dt){
 
   /* -------- with a pistol on him he doesn't have to run you down -------- */
   if(GUNS&&(s.down||0)<=0){
-    if(s.mag===undefined){s.mag=MAG;s.gun=1.2;s.aim=0;}
+    if(s.mag===undefined){s.mag=WEAPONS[0].mag;s.gun=1.2;s.aim=0;}
     s.gun=(s.gun||0)-dt;
     s.aim=seen?Math.min(2,(s.aim||0)+dt):0;             // he has to settle on you first
-    if(seen&&seenD*S<GUN_RANGE&&s.aim>0.6&&s.gun<=0){
-      if(s.mag<=0){ s.mag=MAG; s.gun=2.1; }             // reloading
+    if(seen&&seenD*S<WEAPONS[0].range&&s.aim>0.6&&s.gun<=0){
+      if(s.mag<=0){ s.mag=WEAPONS[0].mag; s.gun=2.1; }  // reloading
       else{
         s.mag--; s.gun=0.85+Math.random()*0.75;
         const m=seenD*S, mover=Math.abs(seen.spd||0);
@@ -2644,217 +2709,510 @@ function aiContactCalls(st,dt){
 }
 
 /* ==========================================================================
-   GUNS — off by default, and the game is exactly what it was without them.
-   Switch them on and everybody is carrying a Makarov. Eight rounds, and it
-   changes who is dangerous: the seeker no longer has to drive you down, and
-   you are no longer helpless when he does.
-
-   Seeker puts one in you        -> you're out, same as being caught
-   You put one in the seeker     -> he's down nine seconds, engine dead
+   THE BASIN — the battle map
+   Not the farm. A wide natural bowl in red rock country, late afternoon:
+   a dry wash winding through the middle, three mesas standing out of the
+   floor, boulder fields for cover and sage flats to cross in the open.
+   Everything here is generated, terrain and ground texture both, so it
+   looks nothing like the farm and plays nothing like it either.
    ========================================================================== */
-const MAG=8, RELOAD_S=1.5, GUN_RANGE_M=110, DOWN_S=9;
-const GUN_RANGE=GUN_RANGE_M;                      // world units are metres
+const ARENA_SPAWNS=[[430,430],[1030,430],[430,1110],[1030,1110],[736,360],
+                    [736,1190],[380,770],[1090,770],[600,620],[880,930]];
+/* mesas: x, y, radius, height, how sheer the sides are */
+const MESAS=[[452,470,150,30,3.0],[1010,600,132,26,3.2],[690,1030,168,34,2.7]];
+/* the wash: a dry riverbed cut through the floor */
+const WASH=[[120,980],[290,930],[450,880],[600,900],[760,860],[900,790],
+            [1060,760],[1240,700],[1380,660]];
+/* rock walls that ring the bowl */
+function arenaRim(px,py){
+  const cx=IW*.5, cy=IH*.5;
+  const d=Math.hypot((px-cx)/(IW*.5),(py-cy)/(IH*.5));
+  return d<.90?0:Math.pow((d-.90)/.10,2)*46;
+}
+function washDepth(px,py){
+  let best=1e9;
+  for(let i=0;i<WASH.length-1;i++) best=Math.min(best,dSeg(px,py,WASH[i],WASH[i+1]));
+  return best<70?(1-best/70)*6.5:0;
+}
+const ahash=(x,y)=>{const n=Math.sin(x*127.1+y*311.7)*43758.5453; return n-Math.floor(n);};
+function avalue(x,y){
+  const xi=Math.floor(x), yi=Math.floor(y), fx=x-xi, fy=y-yi;
+  const u=fx*fx*(3-2*fx), v=fy*fy*(3-2*fy);
+  return ahash(xi,yi)*(1-u)*(1-v)+ahash(xi+1,yi)*u*(1-v)
+        +ahash(xi,yi+1)*(1-u)*v+ahash(xi+1,yi+1)*u*v;
+}
+function arenaHeight(px,py){
+  let h=avalue(px/430,py/430)*13 + avalue(px/165,py/165)*5.2 + avalue(px/62,py/62)*1.5;
+  for(const[mx,my,r,mh,sh]of MESAS){
+    const d=Math.hypot(px-mx,py-my);
+    if(d<r) h+=mh*Math.pow(Math.max(0,1-Math.pow(d/r,sh)),.55);
+  }
+  h+=arenaRim(px,py);
+  h-=washDepth(px,py);
+  return h;
+}
+/* everything is drivable except the rim wall and the sheer mesa tops */
+function arenaOpen(px,py){
+  if(px<40||py<40||px>IW-40||py>IH-40) return false;
+  if(arenaRim(px,py)>2.2) return false;
+  for(const[mx,my,r]of MESAS) if(Math.hypot(px-mx,py-my)<r*.62) return false;
+  return true;
+}
+/* ---- the ground itself, painted into a canvas: sand, rock, sage, wash ---- */
+function arenaTexture(){
+  const S2=1024, c=document.createElement("canvas");
+  c.width=S2; c.height=S2;
+  const g=c.getContext("2d");
+  const img=g.createImageData(S2,S2), D=img.data;
+  for(let y=0;y<S2;y++)for(let x=0;x<S2;x++){
+    const px=x/S2*IW, py=y/S2*IH;
+    const n=avalue(px/95,py/95), n2=avalue(px/26,py/26), grit=avalue(px/5.5,py/5.5);
+    let r,gg,b;
+    const rim=arenaRim(px,py), wash=washDepth(px,py);
+    let mesa=0;
+    for(const[mx,my,rr]of MESAS){const d=Math.hypot(px-mx,py-my); if(d<rr)mesa=Math.max(mesa,1-d/rr);}
+    if(rim>1||mesa>.55){                      // bare red rock
+      r=139+n2*44; gg=74+n2*30; b=54+n2*22;
+    }else if(wash>1.4){                       // pale dry riverbed gravel
+      r=178+n2*32; gg=166+n2*30; b=140+n2*26;
+    }else if(n>.56){                          // sage flats
+      r=104+n2*30; gg=113+n2*32; b=71+n2*24;
+    }else{                                    // sand
+      r=176+n2*34; gg=146+n2*30; b=101+n2*26;
+    }
+    const k=.86+grit*.28;
+    const i=(y*S2+x)*4;
+    D[i]=Math.min(255,r*k); D[i+1]=Math.min(255,gg*k); D[i+2]=Math.min(255,b*k); D[i+3]=255;
+  }
+  g.putImageData(img,0,0);
+  /* scratch some drainage lines down off the high ground */
+  g.strokeStyle="rgba(96,60,42,.16)"; g.lineWidth=1.4;
+  for(let i=0;i<340;i++){
+    let x=Math.random()*S2, y=Math.random()*S2;
+    g.beginPath(); g.moveTo(x,y);
+    for(let k=0;k<9;k++){ x+=(Math.random()-.5)*26; y+=(Math.random()-.5)*26; g.lineTo(x,y); }
+    g.stroke();
+  }
+  const t=new THREE.CanvasTexture(c);
+  if("colorSpace" in t&&THREE.SRGBColorSpace)t.colorSpace=THREE.SRGBColorSpace;
+  else if(THREE.sRGBEncoding)t.encoding=THREE.sRGBEncoding;
+  t.anisotropy=Math.min(Q.aniso,renderer?renderer.capabilities.getMaxAnisotropy():4);
+  return t;
+}
+/* boulders, rock arches and scrub, placed off the driving lines */
+function buildArenaProps(){
+  const rockM=new THREE.MeshPhongMaterial({color:0x8a4a33,flatShading:true,shininess:4});
+  const rockD=new THREE.MeshPhongMaterial({color:0x6d3a28,flatShading:true,shininess:3});
+  const sageM=new THREE.MeshPhongMaterial({color:0x53603a,flatShading:true});
+  const boulders=[],scrub=[];
+  let guard=0;
+  while(boulders.length<Q.bush*1.4&&guard<40000){
+    guard++;
+    const px=Math.random()*IW, py=Math.random()*IH;
+    if(!arenaOpen(px,py))continue;
+    if(washDepth(px,py)>3)continue;
+    boulders.push([px,py,.7+Math.random()*3.4,Math.random()*6.28]);
+  }
+  guard=0;
+  while(scrub.length<Q.grass*.35&&guard<120000){
+    guard++;
+    const px=Math.random()*IW, py=Math.random()*IH;
+    if(!arenaOpen(px,py))continue;
+    scrub.push([px,py,.5+Math.random()*1.1,Math.random()*6.28]);
+  }
+  addChunked(boulders,new THREE.DodecahedronGeometry(1,0),rockM,(d,sp)=>{
+    d.position.set(toWX(sp[0]),height(sp[0],sp[1])+sp[2]*.30,toWZ(sp[1]));
+    d.rotation.set(Math.random()*.6,sp[3],Math.random()*.6);
+    d.scale.set(sp[2]*1.25,sp[2]*.85,sp[2]*1.1);
+  });
+  addChunked(scrub,new THREE.ConeGeometry(.62,1.05,5),sageM,(d,sp)=>{
+    d.position.set(toWX(sp[0]),height(sp[0],sp[1])+sp[2]*.4,toWZ(sp[1]));
+    d.rotation.set(0,sp[3],0); d.scale.setScalar(sp[2]);
+  });
+  /* a few standing rock fins so the skyline isn't flat */
+  const fins=new THREE.Group();
+  for(let i=0;i<24;i++){
+    const a=Math.random()*6.2832, r=460+Math.random()*230;
+    const px=IW/2+Math.cos(a)*r, py=IH/2+Math.sin(a)*r;
+    if(!arenaOpen(px,py))continue;
+    const h=9+Math.random()*22;
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(2.2+Math.random()*2,4+Math.random()*3,h,5),
+                           Math.random()<.5?rockM:rockD);
+    m.position.set(toWX(px),height(px,py)+h*.5,toWZ(py));
+    m.rotation.y=Math.random()*6.28; m.rotation.z=(Math.random()-.5)*.14;
+    fins.add(m);
+  }
+  scene.add(fins);
+}
 
-let gunView=null, muzzleFlash=null, muzzleLight=null, tracers=[], tracerPool=null;
 
-function buildGun(){
-  if(gunView||!GUNS) return;
-  /* a Makarov. Slab slide, straight blowback, brown bakelite grips. */
-  const g=new THREE.Group();
+/* ==========================================================================
+   COMBAT
+   The gun is bolted to the machine, not to your hands. A pintle on the front
+   rack that traverses all the way round, so the hull points one way and the
+   barrel points wherever you're looking. You drive with WASD and you aim with
+   the mouse, and the two have nothing to do with each other.
+
+   Five guns on the rack, and the whole point of them is range:
+   a shotgun that is murder inside 40 yards and useless past it, all the way
+   out to a bolt gun that will reach across the entire farm.
+   ========================================================================== */
+const WEAPONS=[
+  {id:"pm", name:"MAKAROV",    mag:8,   rpm:340, dmg:34, range:110, spread:.011,
+   pellets:1, reload:1.5, auto:false, kick:1.00, tone:"pop",   barrel:.26, bore:.030},
+  {id:"sg", name:"PUMP 12 GA", mag:6,   rpm:78,  dmg:15, range:42,  spread:.062,
+   pellets:9, reload:2.7, auto:false, kick:2.30, tone:"boom",  barrel:.78, bore:.042},
+  {id:"ak", name:"CARBINE",    mag:30,  rpm:600, dmg:23, range:230, spread:.019,
+   pellets:1, reload:2.2, auto:true,  kick:1.05, tone:"crack", barrel:.66, bore:.032},
+  {id:"br", name:"BOLT RIFLE", mag:5,   rpm:48,  dmg:95, range:680, spread:.0022,
+   pellets:1, reload:3.1, auto:false, kick:2.80, tone:"thump", barrel:.96, bore:.030},
+  {id:"mg", name:"BOX MG",     mag:100, rpm:880, dmg:14, range:190, spread:.032,
+   pellets:1, reload:4.3, auto:true,  kick:0.80, tone:"crack", barrel:.82, bore:.038}
+];
+const MAXHP=100, RESPAWN_S=5, DOWN_S=9;
+const wep=()=>WEAPONS[(state&&state.wi)||0];
+
+let turretRig=null, muzzleFlash=null, muzzleLight=null, tracerPool=null;
+let mouseLocked=false, firing=false;
+
+/* -------------------------------------------------- the pintle and gun ---- */
+function buildTurretOn(rig){
+  if(!GUNS||!rig||rig.turret) return;
   const steel=new THREE.MeshPhongMaterial({color:0x24262a,shininess:78,specular:0x8a8f99});
   const dark =new THREE.MeshPhongMaterial({color:0x15171a,shininess:40});
-  const grip =new THREE.MeshPhongMaterial({color:0x4a2a17,shininess:14});
-  const add=(geo,mat,x,y,z,rx)=>{const m=new THREE.Mesh(geo,mat);
-    m.position.set(x,y,z); if(rx)m.rotation.x=rx; g.add(m); return m;};
-  add(new THREE.BoxGeometry(.058,.062,.240),steel,0,0,-.020);          // slide
-  add(new THREE.BoxGeometry(.060,.020,.052),dark ,0,.028,-.128);       // rear sight shelf
-  add(new THREE.BoxGeometry(.010,.014,.012),dark ,0,.040,.086);        // front blade
-  add(new THREE.BoxGeometry(.050,.040,.150),dark ,0,-.052,-.030);      // frame
-  add(new THREE.BoxGeometry(.046,.115,.062),grip ,0,-.118,-.086,0.19); // grip
-  add(new THREE.BoxGeometry(.014,.038,.014),dark ,0,-.074,-.020);      // trigger
-  add(new THREE.TorusGeometry(.030,.007,6,12),dark,0,-.076,-.020,1.571);
-  add(new THREE.CylinderGeometry(.011,.011,.030,10),dark,0,.002,.106,1.571); // muzzle
-  g.traverse(o=>{o.frustumCulled=false;});
-  g.renderOrder=800;
-  g.scale.setScalar(1.05);                    // sits further out than a real hand, so scale to match
-  gunView=g; cam.add(g); scene.add(cam);      // the camera has to be in the graph to draw its children
-
-  muzzleFlash=new THREE.Mesh(new THREE.SphereGeometry(.055,7,5),
+  const yaw=new THREE.Group();                       // traverses
+  const pit=new THREE.Group();                       // elevates
+  const post=new THREE.Mesh(new THREE.CylinderGeometry(.055,.075,.52,8),dark);
+  post.position.y=.26; yaw.add(post);
+  const cradle=new THREE.Mesh(new THREE.BoxGeometry(.17,.13,.24),steel);
+  cradle.position.y=.56; pit.add(cradle);
+  const rec=new THREE.Mesh(new THREE.BoxGeometry(.13,.15,.42),steel);
+  rec.position.set(0,.56,-.10); pit.add(rec);
+  const bbl=new THREE.Mesh(new THREE.CylinderGeometry(.033,.033,1,10),dark);
+  bbl.rotation.x=Math.PI/2; bbl.position.set(0,.56,.42); pit.add(bbl);
+  const box=new THREE.Mesh(new THREE.BoxGeometry(.20,.16,.14),dark);
+  box.position.set(.15,.50,-.06); pit.add(box);
+  pit.position.y=0; yaw.add(pit);
+  yaw.position.set(0,1.26,-0.34);                    // on the front rack
+  yaw.traverse(o=>{o.frustumCulled=false;});
+  rig.atv.add(yaw);
+  rig.turret={yaw,pit,bbl};
+  return rig.turret;
+}
+function shapeBarrel(t,W){
+  if(!t) return;
+  t.bbl.scale.set(W.bore/.033,W.barrel,W.bore/.033);
+  t.bbl.position.z=.10+W.barrel*.5;
+}
+function buildCombat(){
+  if(!GUNS||tracerPool) return;
+  muzzleFlash=new THREE.Mesh(new THREE.SphereGeometry(.14,8,6),
     new THREE.MeshBasicMaterial({color:0xffdc8a,transparent:true,opacity:0,
-      blending:THREE.AdditiveBlending,depthWrite:false,depthTest:false,fog:false}));
-  muzzleFlash.position.set(0,.002,.132); muzzleFlash.frustumCulled=false;
-  muzzleFlash.renderOrder=801; g.add(muzzleFlash);
-  muzzleLight=new THREE.PointLight(0xffcf7a,0,26,2); g.add(muzzleLight);
-  muzzleLight.position.set(0,.002,.14);
-
+      blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+  muzzleFlash.frustumCulled=false; scene.add(muzzleFlash);
+  muzzleLight=new THREE.PointLight(0xffcf7a,0,34,2); scene.add(muzzleLight);
   tracerPool=[];
   const tm=new THREE.MeshBasicMaterial({color:0xffe7a8,transparent:true,opacity:0,
     blending:THREE.AdditiveBlending,depthWrite:false,fog:false});
-  for(let i=0;i<10;i++){
-    const t=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,1,5),tm.clone());
+  for(let i=0;i<28;i++){
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,1,5),tm.clone());
     t.visible=false; t.frustumCulled=false; scene.add(t); tracerPool.push(t);
   }
 }
-function placeGun(st){
-  if(!gunView) return;
-  const show=GUNS&&!spec.on&&!st.out&&!paused;
-  gunView.visible=show;
-  if(!show) return;
-  /* held low across the bars, brought up a little under power, kicked by recoil */
-  const k=st.kick||0, sway=Math.sin(st.t*2.1)*0.004+Math.sin(st.t*3.7)*0.002;
-  const bob=Math.min(1,Math.abs(st.spd)/12)*Math.sin(st.t*13)*0.010;
-  gunView.position.set(0.340,-0.300+sway*2+bob*2, -0.880+k*0.130);
-  gunView.rotation.set(-0.06+k*0.42+bob*0.5, 0.10, 0.04+k*0.05);
+/* where the muzzle actually is in the world, and where it's pointing */
+function aimVec(st){
+  const cp=Math.cos(st.tpitch);
+  return new THREE.Vector3(Math.cos(st.tyaw)*cp, Math.sin(st.tpitch), Math.sin(st.tyaw)*cp);
+}
+function muzzlePoint(st){
+  const W=wep(), d=aimVec(st);
+  const base=new THREE.Vector3(toWX(st.px),(st.air?st.y:height(st.px,st.py))+1.85,toWZ(st.py));
+  return base.addScaledVector(d,0.42+W.barrel);
+}
+function poseTurret(st,rig){
+  if(!rig||!rig.turret) return;
+  rig.turret.yaw.rotation.y = -(st.tyaw) + Math.PI/2 + (st.hdg - Math.PI/2) * 0 - (-st.hdg);
+  /* the hull is already rotated by -hdg, so take that back out to get world aim */
+  rig.turret.yaw.rotation.y = -(st.tyaw - st.hdg);
+  rig.turret.pit.rotation.x = -st.tpitch;
+  shapeBarrel(rig.turret,wep());
 }
 
-/* --- can a bullet actually get there, or is there a hill in the way? --- */
+/* --------------------------------------------------------- ballistics ---- */
 function bulletClear(o,d,dist){
-  const n=Math.max(8,Math.min(56,dist/5));
+  const n=Math.max(8,Math.min(64,dist/6));
   for(let i=1;i<=n;i++){
-    const t=dist*i/n;
-    const x=o.x+d.x*t, y=o.y+d.y*t, z=o.z+d.z*t;
-    if(y<height(toPX(x),toPY(z))) return t;
+    const t=dist*i/n, y=o.y+d.y*t;
+    if(y<height(toPX(o.x+d.x*t),toPY(o.z+d.z*t))) return t;
   }
   return -1;
 }
 function raySphere(o,d,cx,cy,cz,r){
-  const ox=o.x-cx, oy=o.y-cy, oz=o.z-cz;
-  const b=ox*d.x+oy*d.y+oz*d.z, c=ox*ox+oy*oy+oz*oz-r*r;
-  const h=b*b-c; if(h<0) return -1;
+  const ox=o.x-cx,oy=o.y-cy,oz=o.z-cz;
+  const b=ox*d.x+oy*d.y+oz*d.z, c=ox*ox+oy*oy+oz*oz-r*r, h=b*b-c;
+  if(h<0) return -1;
   const t=-b-Math.sqrt(h);
   return t>0?t:-1;
 }
-function shootTargets(){
+function combatTargets(){
   const st=state,out=[];
-  for(const[id,p]of players){ if(!p.role||p.out)continue;
-    out.push({kind:"p",id,role:p.role,px:p.px,py:p.py,name:p.name||("P"+id)}); }
-  if(!humanSeekerExists()&&st.ai.seek&&myRole!=="seeker")
-    out.push({kind:"ais",role:"seeker",px:st.ai.seek.px,py:st.ai.seek.py,name:"THE SEEKER"});
-  st.ai.hiders.forEach((h,i)=>{ if(!h.out)
+  for(const[id,p]of players){
+    if(!p.role||p.out)continue;
+    if(!battleMode()&&p.role===myRole)continue;           // no friendly fire in hide and seek
+    out.push({kind:"p",id,role:p.role,px:p.px,py:p.py,name:p.name||("P"+id)});
+  }
+  if(st.ai.seek&&!humanSeekerExists()&&(battleMode()||myRole!=="seeker"))
+    out.push({kind:"ais",ref:st.ai.seek,role:"seeker",px:st.ai.seek.px,py:st.ai.seek.py,
+              name:battleMode()?"RED":"THE SEEKER"});
+  st.ai.hiders.forEach((h,i)=>{
+    if(h.out)return;
+    if(!battleMode()&&myRole==="hider")return;             // they're on your side
     out.push({kind:"aih",i,ref:h,role:"hider",px:h.px,py:h.py,
-              name:AI_NAMES[i%AI_NAMES.length]}); });
+              name:battleMode()?("BOT "+(i+1)):AI_NAMES[i%AI_NAMES.length]});
+  });
   return out;
 }
 function tracer(from,to,strong){
-  if(!tracerPool) return;
+  if(!tracerPool)return;
   const t=tracerPool.find(x=>!x.visible)||tracerPool[0];
-  const d=new THREE.Vector3().subVectors(to,from);
-  const len=d.length(); if(len<0.2) return;
+  const d=new THREE.Vector3().subVectors(to,from), len=d.length();
+  if(len<.2)return;
   t.scale.set(1,len,1);
-  t.position.copy(from).addScaledVector(d,0.5);
+  t.position.copy(from).addScaledVector(d,.5);
   t.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize());
-  t.material.opacity=strong?0.95:0.55;
-  t.visible=true; t.userData.life=strong?0.09:0.06;
+  t.material.opacity=strong?.95:.5; t.visible=true; t.userData.life=strong?.085:.055;
 }
-function stepTracers(dt){
-  if(!tracerPool) return;
+function stepCombatFX(dt){
+  if(!tracerPool)return;
   for(const t of tracerPool){
-    if(!t.visible) continue;
-    t.userData.life-=dt;
-    t.material.opacity=Math.max(0,t.material.opacity-dt*9);
-    if(t.userData.life<=0||t.material.opacity<=0.01) t.visible=false;
+    if(!t.visible)continue;
+    t.userData.life-=dt; t.material.opacity=Math.max(0,t.material.opacity-dt*10);
+    if(t.userData.life<=0||t.material.opacity<=.01)t.visible=false;
   }
   if(muzzleFlash){
-    muzzleFlash.material.opacity=Math.max(0,muzzleFlash.material.opacity-dt*13);
-    muzzleFlash.scale.setScalar(1+(1-muzzleFlash.material.opacity)*0.8);
+    muzzleFlash.material.opacity=Math.max(0,muzzleFlash.material.opacity-dt*15);
+    muzzleFlash.scale.setScalar(.7+(1-muzzleFlash.material.opacity)*.9);
   }
-  if(muzzleLight) muzzleLight.intensity=Math.max(0,muzzleLight.intensity-dt*70);
+  if(muzzleLight) muzzleLight.intensity=Math.max(0,muzzleLight.intensity-dt*90);
 }
 
-/* --------------------------------- audio --------------------------------- */
-function gunShot(far){
-  if(!eng||!actx) return;
-  const t=actx.currentTime, v=far?0.13:0.5;
+/* ------------------------------------------------------------- audio ----- */
+function gunShot(tone,far){
+  if(!eng||!actx)return;
+  const t=actx.currentTime;
+  const V={pop:.42,boom:.62,crack:.50,thump:.66}[tone]||.5;
+  const v=far?V*.22:V;
   const n=actx.createBufferSource(); n.buffer=eng.noiseBuf;
   const ng=actx.createGain(); ng.gain.setValueAtTime(v,t);
-  ng.gain.exponentialRampToValueAtTime(.0006,t+(far?.20:.13));
-  const hp=actx.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=far?700:420;
+  const tail={pop:.11,boom:.30,crack:.13,thump:.34}[tone]||.13;
+  ng.gain.exponentialRampToValueAtTime(.0006,t+(far?tail*1.7:tail));
+  const hp=actx.createBiquadFilter(); hp.type="highpass";
+  hp.frequency.value=far?620:(tone==="boom"?180:380);
   const lp=actx.createBiquadFilter(); lp.type="lowpass";
-  lp.frequency.setValueAtTime(far?2600:8200,t);
-  lp.frequency.exponentialRampToValueAtTime(far?700:900,t+.12);
+  lp.frequency.setValueAtTime(far?2400:(tone==="crack"?9000:6500),t);
+  lp.frequency.exponentialRampToValueAtTime(far?600:800,t+tail);
   n.connect(hp);hp.connect(lp);lp.connect(ng);ng.connect(eng.master);
-  n.start(t); n.stop(t+.3);
-  const o=actx.createOscillator(), og=actx.createGain();     // the thump under the crack
-  o.type="sine"; o.frequency.setValueAtTime(far?90:165,t);
-  o.frequency.exponentialRampToValueAtTime(42,t+.10);
-  og.gain.setValueAtTime(v*.75,t); og.gain.exponentialRampToValueAtTime(.0005,t+.13);
-  o.connect(og); og.connect(eng.master); o.start(t); o.stop(t+.15);
+  n.start(t); n.stop(t+.5);
+  const o=actx.createOscillator(), og=actx.createGain();
+  o.type="sine";
+  o.frequency.setValueAtTime(far?70:{pop:170,boom:105,crack:150,thump:88}[tone]||150,t);
+  o.frequency.exponentialRampToValueAtTime(38,t+tail);
+  og.gain.setValueAtTime(v*.8,t); og.gain.exponentialRampToValueAtTime(.0005,t+tail*1.1);
+  o.connect(og); og.connect(eng.master); o.start(t); o.stop(t+tail*1.3);
 }
 function clickEmpty(){
-  if(!eng||!actx) return;
-  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  if(!eng||!actx)return;
+  const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();
   o.type="square"; o.frequency.setValueAtTime(2400,t);
   g.gain.setValueAtTime(.05,t); g.gain.exponentialRampToValueAtTime(.0004,t+.035);
-  o.connect(g); g.connect(eng.master); o.start(t); o.stop(t+.04);
+  o.connect(g);g.connect(eng.master);o.start(t);o.stop(t+.04);
 }
 function magSound(seat){
-  if(!eng||!actx) return;
-  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  if(!eng||!actx)return;
+  const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();
   o.type="square"; o.frequency.setValueAtTime(seat?520:900,t);
   o.frequency.exponentialRampToValueAtTime(seat?190:340,t+.05);
   g.gain.setValueAtTime(.075,t); g.gain.exponentialRampToValueAtTime(.0005,t+.07);
-  o.connect(g); g.connect(eng.master); o.start(t); o.stop(t+.08);
+  o.connect(g);g.connect(eng.master);o.start(t);o.stop(t+.08);
 }
 
-/* --------------------------------- firing -------------------------------- */
+/* -------------------------------------------------------------- fire ----- */
 function reloadGun(){
+  const st=state, W=wep();
+  if(!GUNS||!st||st.reload>0||st.ammo>=W.mag||st.out||spec.on)return;
+  st.reload=W.reload; magSound(false);
+}
+function switchWeapon(i){
   const st=state;
-  if(!GUNS||!st||st.reload>0||st.ammo>=MAG||st.out||spec.on) return;
-  st.reload=RELOAD_S; magSound(false);
-  setTimeout(()=>{ if(state) magSound(true); },Math.round(RELOAD_S*700));
+  if(!GUNS||!st||i<0||i>=WEAPONS.length||i===st.wi)return;
+  st.wi=i; st.reload=0; st.ammo=st.mags[i];
+  magSound(true);
+  say("◂ "+WEAPONS[i].name+"  ·  "+WEAPONS[i].range+" YD ▸",1.8);
 }
 function fireGun(){
-  const st=state;
-  if(!GUNS||!st||st.out||spec.on||paused||!running) return;
-  if(st.reload>0) return;
+  const st=state, W=wep();
+  if(!GUNS||!st||st.out||spec.on||paused||!running)return;
+  if(st.reload>0||(st.down||0)>0)return;
+  if(st.cool>0)return;
   if(st.ammo<=0){ clickEmpty(); reloadGun(); return; }
-  if(st.down>0) return;                                    // you're hit, you're not shooting
-  st.ammo--; st.kick=1; st.shake=Math.max(st.shake,0.06);
-  gunShot(false);
-  if(muzzleFlash) muzzleFlash.material.opacity=1;
-  if(muzzleLight) muzzleLight.intensity=13;
+  const hidePh=!battleMode()&&(serverDriving()?RS.phase==="hide":LR.phase==="hide");
 
-  const o=cam.getWorldPosition(new THREE.Vector3());
-  const d=cam.getWorldDirection(new THREE.Vector3());
-  const muzzle=gunView?gunView.localToWorld(new THREE.Vector3(0,.002,.14)):o.clone();
+  st.ammo--; st.mags[st.wi]=st.ammo;
+  st.cool=60/W.rpm;
+  st.kick=Math.min(2.4,(st.kick||0)+W.kick);
+  st.shake=Math.max(st.shake,.05*W.kick);
+  gunShot(W.tone,false);
 
-  const dirt=bulletClear(o,d,GUN_RANGE);
-  const wall=dirt<0?GUN_RANGE:dirt;
-  let best=null,bestT=wall;
-  for(const T of shootTargets()){
-    const tx=toWX(T.px), tz=toWZ(T.py), ty=height(T.px,T.py)+1.15;
-    const t=raySphere(o,d,tx,ty,tz,1.55);
-    if(t>0&&t<bestT){ bestT=t; best=T; }
-  }
-  const end=o.clone().addScaledVector(d,bestT);
-  tracer(muzzle,end,true);
-  const hidePh=serverDriving()?RS.phase==="hide":LR.phase==="hide";
-  if(netOK) send({t:"shot",from:[+muzzle.x.toFixed(1),+muzzle.y.toFixed(1),+muzzle.z.toFixed(1)],
-                  to:[+end.x.toFixed(1),+end.y.toFixed(1),+end.z.toFixed(1)]});
-  if(!best||hidePh) return;
+  const o=muzzlePoint(st), aim=aimVec(st);
+  if(muzzleFlash){ muzzleFlash.position.copy(o); muzzleFlash.material.opacity=1;
+                   muzzleFlash.scale.setScalar(.7+W.kick*.35); }
+  if(muzzleLight){ muzzleLight.position.copy(o); muzzleLight.intensity=isDay()?6:16; }
+  if(netOK) send({t:"shot",w:st.wi,
+    from:[+o.x.toFixed(1),+o.y.toFixed(1),+o.z.toFixed(1)],
+    to:[+(o.x+aim.x*W.range).toFixed(1),+(o.y+aim.y*W.range).toFixed(1),
+        +(o.z+aim.z*W.range).toFixed(1)]});
 
-  /* who did you hit, and what does that mean */
-  if(myRole==="seeker"&&best.role==="hider"){
-    hitHider(best);
-  }else if(myRole!=="seeker"&&best.role==="seeker"){
-    downSeeker(best);
-  }else{
-    say("◂ THAT'S ONE OF OURS — CHECK YOUR TARGET ▸",2.0);
+  for(let s=0;s<W.pellets;s++){
+    const d=aim.clone();
+    if(W.spread>0){
+      d.x+=(Math.random()-.5)*W.spread*2; d.y+=(Math.random()-.5)*W.spread*2;
+      d.z+=(Math.random()-.5)*W.spread*2; d.normalize();
+    }
+    const dirt=bulletClear(o,d,W.range), wall=dirt<0?W.range:dirt;
+    let best=null,bestT=wall;
+    for(const T of combatTargets()){
+      const t=raySphere(o,d,toWX(T.px),height(T.px,T.py)+1.15,toWZ(T.py),1.6);
+      if(t>0&&t<bestT){bestT=t;best=T;}
+    }
+    if(s===0||W.pellets<=3) tracer(o,o.clone().addScaledVector(d,bestT),true);
+    if(best&&!hidePh) applyHit(best,W.dmg,bestT);
   }
 }
-function hitHider(T){
+/* damage, and what it means depends on which game you're playing */
+function applyHit(T,dmg,distW){
+  const st=state;
+  if(!T.hp&&T.ref&&T.ref.hp===undefined) T.ref.hp=MAXHP;
+  hitBlip();
   if(T.kind==="p"){
-    const p=players.get(T.id); if(p) p.out=true;
-    send({t:"tag",target:T.id}); renderRoster();
-  }else if(T.kind==="aih"){ T.ref.out=true; }
-  say("◂ HIT — "+T.name+" IS DOWN ▸",2.4);
+    if(netOK) send({t:"hit",target:T.id,dmg});
+    return;
+  }
+  const ref=T.ref; if(!ref)return;
+  if(ref.hp===undefined) ref.hp=MAXHP;
+  ref.hp-=dmg;
+  if(ref.hp>0) return;
+  ref.hp=MAXHP;
+  if(battleMode()){
+    st.kills=(st.kills||0)+1;
+    killFeed(myName||"YOU",T.name);
+    respawnBot(T);
+  }else if(T.role==="hider"){
+    ref.out=true; say("◂ "+T.name+" IS DOWN ▸",2.2);
+  }else{
+    ref.down=DOWN_S; ref.mode="patrol"; ref.memo=0;
+    say("◂ SEEKER'S HIT — HE'S STOPPED ▸",2.6);
+    radioIn("RADIO","seeker's down. Move.",.3);
+  }
 }
-function downSeeker(T){
-  say("◂ YOU PUT ONE IN THE SEEKER — HE'S DOWN ▸",3.0);
-  radioIn("RADIO","seeker's hit, he's stopped. Move.",0.3);
-  if(T.kind==="p"){ if(netOK) send({t:"down",target:T.id}); }
-  else if(T.kind==="ais"&&state.ai.seek){ state.ai.seek.down=DOWN_S; }
+function hitBlip(){
+  if(!eng||!actx)return;
+  const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();
+  o.type="triangle"; o.frequency.setValueAtTime(1500,t);
+  o.frequency.exponentialRampToValueAtTime(900,t+.05);
+  g.gain.setValueAtTime(.10,t); g.gain.exponentialRampToValueAtTime(.0005,t+.07);
+  o.connect(g);g.connect(eng.master);o.start(t);o.stop(t+.08);
+  const c=el("cross"); if(c){ c.classList.add("hit"); setTimeout(()=>c.classList.remove("hit"),110); }
 }
+
+/* ==========================================================================
+   BATTLE — no hiding, no fuel tanks, no seeker. Everybody is armed and
+   everybody counts. You die, you're back in five seconds.
+   ========================================================================== */
+const battleMode=()=>MODE==="battle";
+const FEED=[];
+function killFeed(a,b){
+  FEED.unshift({a,b,t:6}); if(FEED.length>5)FEED.pop();
+  const box=el("feed"); if(!box)return;
+  box.innerHTML=FEED.map(f=>'<div><b>'+f.a+'</b> <i>&#9583;</i> '+f.b+'</div>').join("");
+  box.classList.add("show");
+}
+function stepFeed(dt){
+  let live=false;
+  for(const f of FEED){ f.t-=dt; if(f.t>0)live=true; }
+  if(!live&&el("feed")) el("feed").classList.remove("show");
+}
+function respawnBot(T){
+  const ref=T.ref; if(!ref)return;
+  let sp=ARENA_SPAWNS[(Math.random()*ARENA_SPAWNS.length)|0];
+  if(!drivable(sp[0],sp[1])) sp=nearestDrivable(sp[0],sp[1]);
+  ref.px=sp[0]; ref.py=sp[1]; ref.hp=MAXHP; ref.path=null; ref.out=false;
+  ref.down=0; ref.spot=null; ref.order=null;
+}
+function youDied(byName){
+  const st=state;
+  st.deaths=(st.deaths||0)+1; st.respawn=RESPAWN_S; st.hp=MAXHP;
+  killFeed(byName||"SOMEBODY",myName||"YOU");
+  say("◂ YOU'RE HIT — BACK IN "+RESPAWN_S+" ▸",2.6);
+  el("hurt").style.opacity=1;
+}
+function battleRespawn(){
+  const st=state;
+  let sp=ARENA_SPAWNS[(Math.random()*ARENA_SPAWNS.length)|0];
+  if(!drivable(sp[0],sp[1])) sp=nearestDrivable(sp[0],sp[1]);
+  st.px=sp[0]; st.py=sp[1]; st.spd=0; st.hp=MAXHP; st.down=0;
+  st.mags=WEAPONS.map(w=>w.mag); st.ammo=wep().mag; st.reload=0;
+  st.engine=true; st.out=false;
+  el("hurt").style.opacity=0;
+}
+function takeDamage(dmg,byName){
+  const st=state;
+  if(!st||st.out||spec.on||(st.respawn||0)>0)return;
+  st.hp=(st.hp===undefined?MAXHP:st.hp)-dmg;
+  st.hurt=1; el("hurt").style.opacity=Math.min(.85,1-st.hp/MAXHP);
+  if(st.hp>0)return;
+  if(battleMode()) youDied(byName);
+  else if(myRole==="seeker"){ st.hp=MAXHP; st.down=DOWN_S; st.engine=false;
+    say("◂ YOU'RE HIT — ENGINE'S DEAD, "+DOWN_S+" SECONDS ▸",3.2); }
+  else { st.hp=MAXHP; st.out=true; if(netOK)send({t:"tag",target:myId});
+    say("◂ SHOT — YOU'RE OUT ▸",3.0); goGhost(); }
+}
+
+/* AI fighters: drive at the nearest enemy and shoot it */
+function battleAI(u,st,dt,name,idx){
+  if(u.hp===undefined)u.hp=MAXHP;
+  if(u.wi===undefined)u.wi=(idx+1)%WEAPONS.length;
+  const W=WEAPONS[u.wi];
+  trackVel(u,dt);
+  let tx=st.px,ty=st.py,td=Math.hypot(st.px-u.px,st.py-u.py),tref=null;
+  const all=[];
+  if(st.ai.seek&&st.ai.seek!==u)all.push(st.ai.seek);
+  for(const h of st.ai.hiders)if(h!==u)all.push(h);
+  for(const o of all){
+    const d=Math.hypot(o.px-u.px,o.py-u.py);
+    if(d<td){td=d;tx=o.px;ty=o.py;tref=o;}
+  }
+  const meTarget=!tref;
+  const ideal=W.range*0.55*M2P;                     // fight at their gun's best range
+  let gx=tx,gy=ty;
+  if(td<ideal*0.6){ gx=u.px+(u.px-tx); gy=u.py+(u.py-ty); }   // back off if too close
+  u.mps=13;
+  driveAt(u,gx,gy,u.mps,dt);
+  u.hdg=Math.atan2(ty-u.py,tx-u.px);
+  u.lights=!isDay();
+  u.gun=(u.gun===undefined?1+Math.random()*2:u.gun)-dt;
+  if(td*S<W.range&&u.gun<=0&&losOpen(u.px,u.py,tx,ty)){
+    u.gun=Math.max(60/W.rpm*2.2,.55)+Math.random()*.6;
+    aiShotFX(u.px,u.py,tx,ty);
+    const chance=Math.max(.05,Math.min(.42,.5-(td*S)/(W.range*1.9)));
+    if(Math.random()<chance){
+      if(meTarget) takeDamage(W.dmg,name);
+      else if(tref){ tref.hp=(tref.hp===undefined?MAXHP:tref.hp)-W.dmg;
+        if(tref.hp<=0){ tref.hp=MAXHP; killFeed(name,"a bot");
+          respawnBot({ref:tref}); } }
+    }
+  }
+}
+
 
 function bar(f){const n=Math.round(Math.max(0,Math.min(1,f))*10);
   return "["+"\u2588".repeat(n)+"\u00b7".repeat(10-n)+"]";}
@@ -3042,15 +3400,21 @@ function tick(){
     el("mudsc").style.opacity=st.mudScreen*0.82;
 
     /* ---- AI fills the empty seats ---- */
-    const aiSeek=!humanSeekerExists();
     trackVel(st,dt);
-    if(aiSeek) smartSeeker(st.ai.seek,st,dt);
-    for(let i=0;i<st.ai.hiders.length;i++){ const h=st.ai.hiders[i]; if(!h.out) smartHider(h,st,dt,i); }
+    if(battleMode()){
+      battleAI(st.ai.seek,st,dt,"RED",0);
+      for(let i=0;i<st.ai.hiders.length;i++) battleAI(st.ai.hiders[i],st,dt,"BOT "+(i+1),i+1);
+    }else{
+      const aiSeek=!humanSeekerExists();
+      if(aiSeek) smartSeeker(st.ai.seek,st,dt);
+      for(let i=0;i<st.ai.hiders.length;i++){ const h=st.ai.hiders[i]; if(!h.out) smartHider(h,st,dt,i); }
+    }
 
     /* ---- detection ---- */
     const hidden=inBush(st.px,st.py)||inSmoke(st.px,st.py);
     let nearest=1e9,inBeam=false,anyLOS=false;
-    if(myRole==="hider"&&!ghost){
+    if(battleMode()){ /* nobody tags anybody out here */ }
+    else if(myRole==="hider"&&!ghost){
       for(const T of threats()){
         const d=Math.hypot(st.px-T.px,st.py-T.py);
         if(d<nearest)nearest=d;
@@ -3069,7 +3433,7 @@ function tick(){
       if(st.beamHold>=DWELL && !st.out){
         st.out=true; send({t:"tag",target:myId}); goGhost();
       }
-    }else if(myRole==="seeker"&&!ghost){
+    }else if(!battleMode()&&myRole==="seeker"&&!ghost){
       /* lights off, you tag nobody. And you have to HOLD the beam on them. */
       st.lock=st.lock||{};
       const hidePhase = serverDriving()?RS.phase==="hide":LR.phase==="hide";
@@ -3131,17 +3495,29 @@ function tick(){
     aiContactCalls(st,dt); stepRadio(dt);
     /* weapon timers */
     if(GUNS){
-      st.kick=Math.max(0,(st.kick||0)-dt*6.5);
-      if(st.reload>0){ st.reload-=dt; if(st.reload<=0){ st.reload=0; st.ammo=MAG; } }
+      const W=wep();
+      st.kick=Math.max(0,(st.kick||0)-dt*7.5);
+      st.cool=Math.max(0,(st.cool||0)-dt);
+      st.hurt=Math.max(0,(st.hurt||0)-dt*1.6);
+      if(st.hp<MAXHP&&(st.respawn||0)<=0){
+        st.hp=Math.min(MAXHP,st.hp+dt*(battleMode()?5.5:3.5));   // you patch up slowly
+        el("hurt").style.opacity=Math.max(0,Math.min(.85,1-st.hp/MAXHP)*.8);
+      }
+      if(st.reload>0){ st.reload-=dt;
+        if(st.reload<=0){ st.reload=0; st.ammo=W.mag; st.mags[st.wi]=W.mag; magSound(true); } }
+      if(W.auto&&firing&&st.cool<=0&&st.reload<=0&&(st.respawn||0)<=0) fireGun();
       if(st.down>0){
         st.down-=dt; st.spd*=Math.pow(.05,dt); st.engine=false;
         if(st.down<=0){ st.down=0; st.engine=true; say("◂ BACK UP — GET MOVING ▸",2.0); }
       }
+      if(st.respawn>0){ st.spd=0;
+        st.respawn-=dt; if(st.respawn<=0){ st.respawn=0; battleRespawn(); } }
       if(st.ai.seek&&st.ai.seek.down>0) st.ai.seek.down-=dt;
+      stepFeed(dt);
     }
 
     /* objectives (hiders only) */
-    if(myRole==="hider"&&!ghost&&RS.phase!=="over"){
+    if(!battleMode()&&myRole==="hider"&&!ghost&&RS.phase!=="over"){
       if(st.phase==="collect"){
         st.pumping=-1;
         for(let i=0;i<canMeshes.length;i++){
@@ -3301,10 +3677,28 @@ function tick(){
       Math.max(0.001,c.fill*6.2831));
     c.ringFg.rotation.x=-Math.PI/2;
   }
-  if(extractRing.visible)extractRing.material.opacity=.4+Math.sin(st.t*2.6)*.22;
+  if(extractRing.visible&&extractRing.material)
+    extractRing.material.opacity=.4+Math.sin(st.t*2.6)*.22;
 
   const fwd=new THREE.Vector3(Math.cos(st.hdg),0,Math.sin(st.hdg));
-  if(spec.on){
+  if(GUNS&&!spec.on){
+    /* over the shoulder of the gun, not the handlebars: the camera follows
+       where the barrel is pointing so the crosshair means something */
+    const cp=Math.cos(st.tpitch);
+    const f=new THREE.Vector3(Math.cos(st.tyaw)*cp,Math.sin(st.tpitch),Math.sin(st.tyaw)*cp);
+    const back=st.zoom?3.4:6.6, up=st.zoom?1.9:2.9;
+    const want=me.atv.position.clone().add(new THREE.Vector3(0,up,0))
+                 .addScaledVector(f,-back)
+                 .add(new THREE.Vector3(-Math.sin(st.tyaw),0,Math.cos(st.tyaw)).multiplyScalar(1.15));
+    want.y=Math.max(want.y,height(toPX(want.x),toPY(want.z))+1.5);
+    cam.position.lerp(want,Math.min(1,dt*11));
+    const look=me.atv.position.clone().add(new THREE.Vector3(0,1.75,0)).addScaledVector(f,60);
+    cam.lookAt(look);
+    const fovWant=st.zoom?42:66;
+    if(Math.abs(cam.fov-fovWant)>0.2){ cam.fov+=(fovWant-cam.fov)*Math.min(1,dt*10);
+                                       cam.updateProjectionMatrix(); }
+  }else if(spec.on){
+
     const tg=specCam(dt,st); specLight(tg); specBeacon(tg,st); specHUD(tg);
   }else if(camMode===0){
     const want=me.atv.position.clone().add(fwd.clone().multiplyScalar(-8.6)).add(new THREE.Vector3(0,4.7,0));
@@ -3315,7 +3709,7 @@ function tick(){
     cam.lookAt(me.atv.position.clone().add(fwd.clone().multiplyScalar(28)).add(new THREE.Vector3(0,1.7,0)));
   }
 
-  if(GUNS){ placeGun(st); stepTracers(dt); }
+  if(GUNS){ buildTurretOn(me); poseTurret(st,me); stepCombatFX(dt); }
   stepSplash(dt); stepSmoke(dt); stepBear(dt,st.px,st.py); stepAtmos(dt,st.t);
   stepFireworks(dt); stepNades(dt); stepLocalRound(dt);
   if(st.shake>0.002){const s2=st.shake*0.55;
@@ -3327,8 +3721,15 @@ function tick(){
 
 function updateHUD(nearestPx){
   const st=state;
-  el("stat").style.display=spec.on?"none":"";       // no machine, no machine readout
-  el("roleN").textContent=spec.on?"SPECTATOR":myRole.toUpperCase();
+  el("stat").style.display=(spec.on||battleMode())?"none":"";
+  if(battleMode()){
+    el("obj").style.display="none";
+    el("roundBar").style.display="none";
+    el("score").style.left="0"; el("score").style.right="0";
+    el("score").style.top="20px"; el("score").style.textAlign="center";
+    el("wrack").style.bottom="22px";
+  }
+  el("roleN").textContent=spec.on?"SPECTATOR":(battleMode()?"FIGHTER":myRole.toUpperCase());
   el("roleN").style.color=spec.on?"#cfe6dc":
     myRole==="seeker"?"#ff4d42":myRole==="kubota"?"#a9d4ff":"#34e0c8";
   el("hl").textContent=st.lights?"ON":"OFF"; el("hl").className=st.lights?"on":"off";
@@ -3375,13 +3776,30 @@ function updateHUD(nearestPx){
   el("tachF").style.background=st.rpm>.92?"#ff4d42":st.rpm>.72?"#f0b429":"#34e0c8";
   el("modeN").textContent=st.adv?"MANUAL":"AUTO";
   if(GUNS){
-    const live=!spec.on&&!st.out&&running;
-    el("cross").classList.toggle("show",live&&(st.down||0)<=0);
+    const W=wep(), live=!spec.on&&!st.out&&running&&(st.respawn||0)<=0;
+    el("cross").classList.toggle("show",live&&(st.down||0)<=0&&mouseLocked);
     el("ammo").classList.toggle("show",live);
-    el("ammo").classList.toggle("low",st.ammo<=2);
+    el("ammo").classList.toggle("low",st.ammo<=Math.max(2,W.mag*.2));
     el("ammoN").textContent=st.ammo;
-    el("ammoS").textContent="/ "+MAG;
+    el("ammoS").textContent="/ "+W.mag+"  "+W.name;
     el("ammoR").style.visibility=st.reload>0?"visible":"hidden";
+    el("hpbar").classList.toggle("show",live);
+    const hp=Math.max(0,Math.round(st.hp));
+    el("hpfill").style.width=hp+"%";
+    el("hpfill").style.background=hp>60?"#34e0c8":hp>28?"#f0b429":"#ff4d42";
+    el("hpN").textContent=hp;
+    if(el("wrack").dataset.wi!==String(st.wi)){
+      el("wrack").dataset.wi=String(st.wi);
+      el("wrack").innerHTML=WEAPONS.map((w,i)=>
+        '<div class="w'+(i===st.wi?" on":"")+'"><b>'+(i+1)+'</b>'+w.name+
+        '<i>'+w.range+' yd</i></div>').join("");
+    }
+    el("wrack").classList.toggle("show",live);
+    if(battleMode()){
+      el("score").classList.add("show");
+      el("score").innerHTML='<b>'+(st.kills||0)+'</b>KILLS<i>'+(st.deaths||0)+'</i>DOWN';
+    }
+    el("lockHint").classList.toggle("show",running&&!mouseLocked&&!paused&&!spec.on);
   }
   if(myRole==="hider"){
     let h="";
@@ -3406,9 +3824,31 @@ function updateHUD(nearestPx){
   }
 }
 
+function drawArenaMap(g,W,H,k){
+  const sx=W/IW, sy=H/IH;
+  g.fillStyle="#3a2418"; g.fillRect(0,0,W,H);
+  g.fillStyle="#6d4a2e";
+  g.beginPath(); g.ellipse(W/2,H/2,W*.43,H*.43,0,0,6.2832); g.fill();
+  g.fillStyle="rgba(150,132,96,.55)";                       // the dry wash
+  g.strokeStyle="rgba(196,178,142,.6)"; g.lineWidth=9*k; g.lineJoin="round";
+  g.beginPath(); WASH.forEach((p,i)=>i?g.lineTo(p[0]*sx,p[1]*sy):g.moveTo(p[0]*sx,p[1]*sy));
+  g.stroke();
+  for(const[mx,my,r]of MESAS){                              // the mesas
+    g.fillStyle="rgba(122,58,40,.85)";
+    g.beginPath(); g.arc(mx*sx,my*sy,r*sx,0,6.2832); g.fill();
+    g.strokeStyle="rgba(220,150,110,.5)"; g.lineWidth=1.4*k;
+    g.beginPath(); g.arc(mx*sx,my*sy,r*sx*.62,0,6.2832); g.stroke();
+  }
+  g.strokeStyle="rgba(230,170,120,.45)"; g.lineWidth=2.2*k;
+  g.beginPath(); g.ellipse(W/2,H/2,W*.43,H*.43,0,0,6.2832); g.stroke();
+}
 function drawMap(g,W,H,big){
   const st=state,sx=W/IW,sy=H/IH,k=big?2.4:1;
   g.clearRect(0,0,W,H);
+  if(battleMode()){
+    drawArenaMap(g,W,H,k);
+    g.fillStyle="rgba(20,8,4,"+(big?.16:.24)+")"; g.fillRect(0,0,W,H);
+  }else{
   if(miniImg){g.globalAlpha=big?.72:.55;g.drawImage(miniImg,0,0,W,H);g.globalAlpha=1;}
   g.fillStyle="rgba(4,10,16,"+(big?.34:.45)+")";g.fillRect(0,0,W,H);
   g.strokeStyle="rgba(140,220,150,.34)";g.lineWidth=1*k;
@@ -3418,6 +3858,7 @@ function drawMap(g,W,H,big){
   for(const r of ROADS){ if(r.secret) continue; g.beginPath();
     r.pts.forEach((p,i)=>i?g.lineTo(p[0]*sx,p[1]*sy):g.moveTo(p[0]*sx,p[1]*sy));g.stroke();}
   g.strokeStyle="#f0b429";g.lineWidth=2*k;g.beginPath();g.arc(838*sx,1372*sy,7*k,0,6.29);g.stroke();
+  }
   if(big){
     g.fillStyle="#f0b429";g.font="600 "+(11*k)+"px ui-monospace,monospace";
     g.fillText("THE CHOKE — only crossing",838*sx+18*k,1372*sy+5);
@@ -3547,7 +3988,8 @@ addEventListener("keydown",e=>{
     else{ state.crank=1.25; engineCrank(); }
   }
   if(GUNS&&k==="keyr"&&!e.repeat) reloadGun();
-  if(GUNS&&k==="space"&&!e.repeat){ e.preventDefault(); fireGun(); }
+  if(GUNS&&k==="space"&&!e.repeat){ e.preventDefault(); firing=true; fireGun(); }
+  if(GUNS&&/^digit[1-5]$/.test(k)&&!e.repeat) switchWeapon(parseInt(k.slice(5),10)-1);
   if(k==="keym")toggleMap();
   if(k==="escape"&&paused)toggleMap();
   if(k==="keyr"&&scene)resetGame();
@@ -3561,13 +4003,42 @@ function shift(d){
   if(GEARS[state.gear].max<0&&state.spd>2) state.gear=GN;
   if(state.gear!==was){ clunk(d>0); state.shiftKick=d>0?0.22:0.10; }
 }
-addEventListener("mousedown",e=>{
-  if(!GUNS||e.button!==0) return;
-  if(document.activeElement&&document.activeElement.tagName==="INPUT") return;
-  if(el("start").classList.contains("hide")&&!paused) fireGun();
+/* The gun is on the machine, so aiming is a turret traverse, not a head turn.
+   Mouse moves the barrel, WASD drives the hull, and they are independent. */
+const AIMSENS=0.0024;
+function lockMouse(){
+  const c=el("gl");
+  if(!GUNS||mouseLocked||!c.requestPointerLock) return;
+  try{ c.requestPointerLock(); }catch(e){}
+}
+document.addEventListener("pointerlockchange",()=>{
+  mouseLocked=(document.pointerLockElement===el("gl"));
+  const h=el("lockHint"); if(h) h.classList.toggle("show",GUNS&&running&&!mouseLocked&&!paused);
 });
+addEventListener("mousemove",e=>{
+  if(!GUNS||!mouseLocked||!state||paused) return;
+  state.tyaw += e.movementX*AIMSENS;
+  state.tpitch = Math.max(-0.40,Math.min(0.62,state.tpitch - e.movementY*AIMSENS));
+});
+addEventListener("mousedown",e=>{
+  if(!GUNS) return;
+  if(document.activeElement&&document.activeElement.tagName==="INPUT") return;
+  if(el("start").classList.contains("hide")&&!paused){
+    if(!mouseLocked){ lockMouse(); return; }
+    if(e.button===0){ firing=true; fireGun(); }
+    if(e.button===2){ state.zoom=true; }
+  }
+});
+addEventListener("mouseup",e=>{ if(e.button===0) firing=false;
+                                if(e.button===2&&state) state.zoom=false; });
 addEventListener("contextmenu",e=>{ if(GUNS&&running) e.preventDefault(); });
+addEventListener("wheel",e=>{
+  if(!GUNS||!state||!mouseLocked) return;
+  e.preventDefault();
+  switchWeapon((state.wi+(e.deltaY>0?1:WEAPONS.length-1))%WEAPONS.length);
+},{passive:false});
 addEventListener("keyup",e=>{const k=e.code.toLowerCase();keys[k]=false;
+  if(k==="space") firing=false;
   if(k==="keyt"){setPTT(false);srStop();
     // give the transcriber a beat to hand over the last words
     setTimeout(()=>{const said=srHeard;srHeard="";aiAnswer(said);},420);}});
@@ -3581,7 +4052,11 @@ let roundMin=5;
   for(const k in QUAL) sel.innerHTML+=
     '<option value="'+k+'"'+(k===cur?" selected":"")+'>'+QUAL[k].label+' — '+QUAL[k].note+'</option>';
   const f=localStorage.getItem("nightops.fps"); if(f!==null) el("fpsIn").value=f;
-  el("mapIn").value=MAPMODE; el("gunIn").value=GUNS?"on":"off";
+  el("mapIn").value=MAPMODE; el("gunIn").value=GUNS?"on":"off"; el("modeIn").value=MODE;
+  const modeSync=()=>{const bt=el("modeIn").value==="battle";
+    el("mapIn").disabled=bt; el("gunIn").disabled=bt;
+    el("mapIn").style.opacity=bt?.45:1; el("gunIn").style.opacity=bt?.45:1;};
+  el("modeIn").onchange=modeSync; modeSync();
 })();
 document.querySelectorAll(".role[data-role]").forEach(r=>r.onclick=()=>{
   document.querySelectorAll(".role[data-role]").forEach(x=>x.classList.remove("sel"));
@@ -3623,8 +4098,10 @@ img.src=IMG_SRC;
 
 el("goBtn").onclick=()=>{
   initAudio();if(actx&&actx.state==="suspended")actx.resume();initMic();
+  MODE=el("modeIn").value==="battle"?"battle":"seek"; localStorage.setItem("nightops.mode",MODE);
   MAPMODE=el("mapIn").value==="day"?"day":"night"; localStorage.setItem("nightops.map",MAPMODE);
   GUNS=el("gunIn").value==="on"; localStorage.setItem("nightops.guns",GUNS?"on":"off");
+  if(MODE==="battle"){ GUNS=true; MAPMODE="day"; }   // the Basin is a gunfight in daylight
   Q=QUAL[el("qIn").value]||QUAL.high; localStorage.setItem("nightops.q",el("qIn").value);
   FPSCAP=parseInt(el("fpsIn").value,10)||0; localStorage.setItem("nightops.fps",el("fpsIn").value);
   myName=(el("nameIn").value||"").trim().slice(0,14)||("RIDER"+((Math.random()*90+10)|0));
