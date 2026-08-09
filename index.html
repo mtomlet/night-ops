@@ -55,16 +55,43 @@
          text-shadow:0 2px 10px rgba(0,0,0,.95),0 0 3px rgba(0,0,0,.9)}
   #radio.show{opacity:1}
 
-  #cross{top:50%;left:50%;width:26px;height:26px;transform:translate(-50%,-50%);opacity:0;
-         transition:opacity .18s}
-  #cross.show{opacity:.92}
-  #cross i{position:absolute;background:#eaf3ec;box-shadow:0 0 3px rgba(0,0,0,.85)}
-  #cross i:nth-child(1){left:11.5px;top:0;width:3px;height:8px}
-  #cross i:nth-child(2){left:11.5px;bottom:0;width:3px;height:8px}
-  #cross i:nth-child(3){top:11.5px;left:0;height:3px;width:8px}
-  #cross i:nth-child(4){top:11.5px;right:0;height:3px;width:8px}
-  #cross b{position:absolute;left:12px;top:12px;width:2px;height:2px;background:#ffd76a;
-           border-radius:50%}
+  #cross{top:50%;left:50%;width:0;height:0;opacity:0;transition:opacity .14s}
+  #cross.show{opacity:1}
+  #cross i{position:absolute;background:#f2fbf4;
+           box-shadow:0 0 0 1px rgba(0,0,0,.85),0 0 6px rgba(0,0,0,.9)}
+  #cross .ct,#cross .cb{width:3px;height:15px;left:-1.5px}
+  #cross .cl,#cross .cr{height:3px;width:15px;top:-1.5px}
+  #cross b{position:absolute;left:-2px;top:-2px;width:4px;height:4px;background:#ffd76a;
+           border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.9)}
+  #hitm{top:50%;left:50%;width:0;height:0;opacity:0;transition:opacity .09s}
+  #hitm.show{opacity:1}
+  #hitm i{position:absolute;width:22px;height:3px;background:#ff5a44;left:-11px;top:-1.5px;
+          box-shadow:0 0 0 1px rgba(0,0,0,.9)}
+  #hitm i:nth-child(1){transform:rotate(45deg)}
+  #hitm i:nth-child(2){transform:rotate(-45deg)}
+
+  /* the bolt gun's glass. Only it gets one. */
+  /* transparent: the black surround comes from the glass's own box-shadow,
+     so what's inside the circle is the game */
+  #scope{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity .10s;
+         z-index:6}
+  #scope.show{opacity:1}
+  #scope .glass{position:absolute;left:50%;top:50%;width:74vh;height:74vh;
+                transform:translate(-50%,-50%);border-radius:50%;
+                box-shadow:0 0 0 100vmax #000,inset 0 0 70px rgba(0,0,0,.85)}
+  #scope .ring{position:absolute;left:50%;top:50%;width:74vh;height:74vh;
+               transform:translate(-50%,-50%);border-radius:50%;
+               border:2px solid rgba(0,0,0,.9);
+               box-shadow:inset 0 0 0 1px rgba(120,140,120,.30)}
+  #scope .glass i{position:absolute;background:rgba(8,12,8,.95)}
+  #scope .glass .v{left:50%;top:0;bottom:0;width:1.5px;margin-left:-.75px}
+  #scope .glass .h{top:50%;left:0;right:0;height:1.5px;margin-top:-.75px}
+  #scope .glass u{position:absolute;background:rgba(12,16,12,.9)}
+  #scope .glass .m{left:50%;width:1.5px;height:9px;margin-left:-.75px}
+  #scope .glass .m1{top:calc(50% + 7%)} #scope .glass .m2{top:calc(50% + 14%)}
+  #scope .glass .m3{top:calc(50% + 21%)}
+  #scope .glass .mh{top:50%;height:1.5px;width:9px;margin-top:-.75px}
+  #scope .glass .mh1{left:calc(50% - 10%)} #scope .glass .mh2{left:calc(50% + 10%)}
   #ammo{right:22px;bottom:104px;text-align:right;opacity:0;transition:opacity .2s}
   #ammo.show{opacity:1}
   #ammoN{font-size:30px;color:#eef5ea;letter-spacing:.04em}
@@ -209,7 +236,7 @@
     <div class="row"><span class="lab">NEAREST THREAT</span><b id="skr">—</b></div>
     <div class="row"><span class="lab">ELAPSED</span><b id="clk">0:00</b></div>
   </div>
-  <div id="players"><h5>ON THE FARM</h5><div id="plist"></div></div>
+  <div id="players"><h5 id="rosterTitle">ON THE FARM</h5><div id="plist"></div></div>
 </div>
 
 <div class="hud" id="roundBar"><span id="rPhase">CONNECTING</span><i></i><span id="rClock">--:--</span><i></i><span id="rAlive"></span></div>
@@ -233,7 +260,11 @@
 <div class="hud" id="alert"></div>
 <div class="hud" id="radio"></div>
 <div id="hurt"></div>
-<div class="hud" id="cross"><i></i><i></i><i></i><i></i><b></b></div>
+<div class="hud" id="cross"><i class="ct"></i><i class="cb"></i><i class="cl"></i><i class="cr"></i><b></b></div>
+<div class="hud" id="hitm"><i></i><i></i></div>
+<div id="scope"><div class="glass"><i class="v"></i><i class="h"></i>
+  <u class="m m1"></u><u class="m m2"></u><u class="m m3"></u>
+  <u class="mh mh1"></u><u class="mh mh2"></u></div><div class="ring"></div></div>
 <div class="hud" id="ammo"><span id="ammoN">8</span><span id="ammoS">/ 8</span><i id="ammoR">RELOADING</i></div>
 <div class="hud" id="hpbar"><i id="hpfill"></i><span id="hpN">100</span></div>
 <div class="hud" id="wrack"></div>
@@ -762,6 +793,19 @@ function addChunked(spots,geo,mat,place){
   }
   return out;
 }
+let GLOWTEX=null;
+function glowTexture(){
+  if(GLOWTEX) return GLOWTEX;
+  const n=128, c=document.createElement("canvas"); c.width=c.height=n;
+  const g=c.getContext("2d");
+  const rg=g.createRadialGradient(n/2,n/2,0,n/2,n/2,n/2);
+  rg.addColorStop(0,"rgba(255,255,255,1)");
+  rg.addColorStop(.35,"rgba(255,255,255,.42)");
+  rg.addColorStop(1,"rgba(255,255,255,0)");
+  g.fillStyle=rg; g.fillRect(0,0,n,n);
+  GLOWTEX=new THREE.CanvasTexture(c);
+  return GLOWTEX;
+}
 function buildWorld(tex){
   const DAY=isDay(), BASIN=battleMode();
   scene=new THREE.Scene();
@@ -831,8 +875,8 @@ function buildWorld(tex){
     c.position.set((Math.random()-.5)*58,(Math.random()-.5)*58,.5);
     if(Math.hypot(c.position.x,c.position.y)<34) moonGrp.add(c);
   }
-  const halo=new THREE.Sprite(new THREE.SpriteMaterial({color:0xdfe8ff,transparent:true,
-    opacity:.30,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
+  const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTexture(),color:0xdfe8ff,
+    transparent:true,opacity:.30,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
   halo.scale.set(320,320,1); moonGrp.add(halo);
   moonGrp.position.set(-780,470,-900); moonGrp.lookAt(0,60,0);
   moonGrp.renderOrder=-1; scene.add(moonGrp);
@@ -845,8 +889,8 @@ function buildWorld(tex){
     const sunGrp=new THREE.Group();
     sunGrp.add(new THREE.Mesh(new THREE.CircleGeometry(38,40),
       new THREE.MeshBasicMaterial({color:BASIN?0xffe6b0:0xfffdf0,fog:false})));
-    const flare=new THREE.Sprite(new THREE.SpriteMaterial({color:0xfff0c4,transparent:true,
-      opacity:.42,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
+    const flare=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTexture(),color:0xfff0c4,
+      transparent:true,opacity:.42,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
     flare.scale.set(210,210,1); sunGrp.add(flare);
     sunGrp.position.set(BASIN?-1150:700,BASIN?300:1080,BASIN?640:480); sunGrp.lookAt(0,60,0);
     sunGrp.renderOrder=-1; scene.add(sunGrp);
@@ -878,7 +922,8 @@ function buildWorld(tex){
   scene.add(terrain);
 
   if(battleMode()){
-    buildArenaProps(); buildAtmos(); buildFireworks(); buildSmoke(); buildCombat();
+    buildArenaProps(); buildDrive();          // the big rock is solid, so re-mask
+    buildAtmos(); buildFireworks(); buildSmoke(); buildCombat();
     bushGrid={};
     /* no fuel run out here, but the rest of the game still reaches for these */
     const nul=new THREE.Object3D(); nul.visible=false;
@@ -2716,8 +2761,10 @@ function aiContactCalls(st,dt){
    Everything here is generated, terrain and ground texture both, so it
    looks nothing like the farm and plays nothing like it either.
    ========================================================================== */
-const ARENA_SPAWNS=[[430,430],[1030,430],[430,1110],[1030,1110],[736,360],
-                    [736,1190],[380,770],[1090,770],[600,620],[880,930]];
+/* every one of these is clear of the mesas and well inside the rim — spawning
+   nose-first into a cliff face is not a fight, it's a loading screen */
+const ARENA_SPAWNS=[[250,430],[1030,380],[300,1130],[1080,1120],[736,300],
+                    [736,1270],[330,790],[1150,790],[560,700],[900,880]];
 /* mesas: x, y, radius, height, how sheer the sides are */
 const MESAS=[[452,470,150,30,3.0],[1010,600,132,26,3.2],[690,1030,168,34,2.7]];
 /* the wash: a dry riverbed cut through the floor */
@@ -2752,10 +2799,18 @@ function arenaHeight(px,py){
   return h;
 }
 /* everything is drivable except the rim wall and the sheer mesa tops */
-function arenaOpen(px,py){
+function arenaOpenBase(px,py){
   if(px<40||py<40||px>IW-40||py>IH-40) return false;
   if(arenaRim(px,py)>2.2) return false;
   for(const[mx,my,r]of MESAS) if(Math.hypot(px-mx,py-my)<r*.62) return false;
+  return true;
+}
+function arenaOpen(px,py){
+  if(!arenaOpenBase(px,py)) return false;
+  for(let i=0;i<ROCKS.length;i++){
+    const R=ROCKS[i], dx=px-R[0], dy=py-R[1];
+    if(dx*dx+dy*dy < R[2]*R[2]) return false;      // you go around the big ones
+  }
   return true;
 }
 /* ---- the ground itself, painted into a canvas: sand, rock, sage, wash ---- */
@@ -2799,52 +2854,86 @@ function arenaTexture(){
   t.anisotropy=Math.min(Q.aniso,renderer?renderer.capabilities.getMaxAnisotropy():4);
   return t;
 }
-/* boulders, rock arches and scrub, placed off the driving lines */
+/* ---------------------------------------------------------------------------
+   Rock. The first pass scattered boulders evenly over the whole basin and it
+   drove like a gravel pit — you could not go thirty yards without clipping
+   something. Now the rock lives in a handful of named fields with wide open
+   ground between them, and the big stuff is solid so it reads as cover you
+   drive AROUND instead of scenery you drive THROUGH.
+   ------------------------------------------------------------------------- */
+let ROCKS=[];                                    // solid ones: [px,py,radius]
+const ROCK_FIELDS=[
+  [300,430,120],[1140,470,130],[560,300,105],[900,250,95],
+  [250,1050,125],[1180,1090,120],[640,1300,110],[980,1330,100],
+  [430,830,95],[1040,830,95],[736,700,120]
+];
 function buildArenaProps(){
   const rockM=new THREE.MeshPhongMaterial({color:0x8a4a33,flatShading:true,shininess:4});
   const rockD=new THREE.MeshPhongMaterial({color:0x6d3a28,flatShading:true,shininess:3});
   const sageM=new THREE.MeshPhongMaterial({color:0x53603a,flatShading:true});
-  const boulders=[],scrub=[];
-  let guard=0;
-  while(boulders.length<Q.bush*1.4&&guard<40000){
+  ROCKS=[];
+
+  /* big solid boulders, only inside the rock fields */
+  const big=[];
+  for(const[fx,fy,fr]of ROCK_FIELDS){
+    const n=7+((fr/22)|0);
+    for(let i=0;i<n;i++){
+      const a=Math.random()*6.2832, r=Math.sqrt(Math.random())*fr;
+      const px=fx+Math.cos(a)*r, py=fy+Math.sin(a)*r;
+      if(!arenaOpenBase(px,py)) continue;
+      const rad=3.4+Math.random()*3.6;
+      ROCKS.push([px,py,rad]);
+      big.push([px,py,rad,Math.random()*6.28]);
+    }
+  }
+  addChunked(big,new THREE.DodecahedronGeometry(1,0),rockM,(d,sp)=>{
+    d.position.set(toWX(sp[0]),height(sp[0],sp[1])+sp[2]*.30*S,toWZ(sp[1]));
+    d.rotation.set(Math.random()*.5,sp[3],Math.random()*.5);
+    d.scale.set(sp[2]*S*1.3,sp[2]*S*.95,sp[2]*S*1.15);
+  });
+
+  /* low rubble you can drive straight over — texture, not obstacle */
+  const rubble=[]; let guard=0;
+  while(rubble.length<Math.min(1400,Q.bush)&&guard<30000){
     guard++;
     const px=Math.random()*IW, py=Math.random()*IH;
-    if(!arenaOpen(px,py))continue;
-    if(washDepth(px,py)>3)continue;
-    boulders.push([px,py,.7+Math.random()*3.4,Math.random()*6.28]);
+    if(!arenaOpenBase(px,py)) continue;
+    rubble.push([px,py,.35+Math.random()*.55,Math.random()*6.28]);
   }
-  guard=0;
-  while(scrub.length<Q.grass*.35&&guard<120000){
+  addChunked(rubble,new THREE.DodecahedronGeometry(1,0),rockD,(d,sp)=>{
+    d.position.set(toWX(sp[0]),height(sp[0],sp[1])+sp[2]*.16,toWZ(sp[1]));
+    d.rotation.set(Math.random()*.4,sp[3],Math.random()*.4);
+    d.scale.set(sp[2]*1.5,sp[2]*.42,sp[2]*1.3);
+  });
+
+  /* sage, low and sparse, nowhere near thick enough to hide a machine */
+  const scrub=[]; guard=0;
+  while(scrub.length<Math.min(2600,Q.grass*.12)&&guard<60000){
     guard++;
     const px=Math.random()*IW, py=Math.random()*IH;
-    if(!arenaOpen(px,py))continue;
-    scrub.push([px,py,.5+Math.random()*1.1,Math.random()*6.28]);
+    if(!arenaOpenBase(px,py)) continue;
+    if(washDepth(px,py)>3) continue;
+    scrub.push([px,py,.42+Math.random()*.55,Math.random()*6.28]);
   }
-  addChunked(boulders,new THREE.DodecahedronGeometry(1,0),rockM,(d,sp)=>{
-    d.position.set(toWX(sp[0]),height(sp[0],sp[1])+sp[2]*.30,toWZ(sp[1]));
-    d.rotation.set(Math.random()*.6,sp[3],Math.random()*.6);
-    d.scale.set(sp[2]*1.25,sp[2]*.85,sp[2]*1.1);
+  addChunked(scrub,new THREE.SphereGeometry(.7,5,4),sageM,(d,sp)=>{
+    d.position.set(toWX(sp[0]),height(sp[0],sp[1])+sp[2]*.28,toWZ(sp[1]));
+    d.rotation.set(0,sp[3],0); d.scale.set(sp[2]*1.2,sp[2]*.6,sp[2]*1.2);
   });
-  addChunked(scrub,new THREE.ConeGeometry(.62,1.05,5),sageM,(d,sp)=>{
-    d.position.set(toWX(sp[0]),height(sp[0],sp[1])+sp[2]*.4,toWZ(sp[1]));
-    d.rotation.set(0,sp[3],0); d.scale.setScalar(sp[2]);
-  });
-  /* a few standing rock fins so the skyline isn't flat */
+
+  /* standing fins up on the rim, pure skyline */
   const fins=new THREE.Group();
-  for(let i=0;i<24;i++){
-    const a=Math.random()*6.2832, r=460+Math.random()*230;
+  for(let i=0;i<30;i++){
+    const a=Math.random()*6.2832, r=560+Math.random()*150;
     const px=IW/2+Math.cos(a)*r, py=IH/2+Math.sin(a)*r;
-    if(!arenaOpen(px,py))continue;
-    const h=9+Math.random()*22;
-    const m=new THREE.Mesh(new THREE.CylinderGeometry(2.2+Math.random()*2,4+Math.random()*3,h,5),
+    const h=11+Math.random()*26;
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(2.0+Math.random()*2,4+Math.random()*3,h,5),
                            Math.random()<.5?rockM:rockD);
     m.position.set(toWX(px),height(px,py)+h*.5,toWZ(py));
-    m.rotation.y=Math.random()*6.28; m.rotation.z=(Math.random()-.5)*.14;
+    m.rotation.y=Math.random()*6.28; m.rotation.z=(Math.random()-.5)*.12;
     fins.add(m);
   }
   scene.add(fins);
 }
-
 
 /* ==========================================================================
    COMBAT
@@ -2965,7 +3054,7 @@ function combatTargets(){
     out.push({kind:"ais",ref:st.ai.seek,role:"seeker",px:st.ai.seek.px,py:st.ai.seek.py,
               name:battleMode()?"RED":"THE SEEKER"});
   st.ai.hiders.forEach((h,i)=>{
-    if(h.out)return;
+    if(h.out||h.dead>0)return;
     if(!battleMode()&&myRole==="hider")return;             // they're on your side
     out.push({kind:"aih",i,ref:h,role:"hider",px:h.px,py:h.py,
               name:battleMode()?("BOT "+(i+1)):AI_NAMES[i%AI_NAMES.length]});
@@ -3045,7 +3134,7 @@ function reloadGun(){
 function switchWeapon(i){
   const st=state;
   if(!GUNS||!st||i<0||i>=WEAPONS.length||i===st.wi)return;
-  st.wi=i; st.reload=0; st.ammo=st.mags[i];
+  st.wi=i; st.reload=0; st.ammo=st.mags[i]; st.scoped=false; st.zoom=false;
   magSound(true);
   say("◂ "+WEAPONS[i].name+"  ·  "+WEAPONS[i].range+" YD ▸",1.8);
 }
@@ -3105,8 +3194,9 @@ function applyHit(T,dmg,distW){
   if(battleMode()){
     st.kills=(st.kills||0)+1;
     killFeed(myName||"YOU",T.name);
-    respawnBot(T);
+    killBot(T);
   }else if(T.role==="hider"){
+    spawnWreck(ref.px,ref.py,0x2f4a2c);
     ref.out=true; say("◂ "+T.name+" IS DOWN ▸",2.2);
   }else{
     ref.down=DOWN_S; ref.mode="patrol"; ref.memo=0;
@@ -3122,6 +3212,148 @@ function hitBlip(){
   g.gain.setValueAtTime(.10,t); g.gain.exponentialRampToValueAtTime(.0005,t+.07);
   o.connect(g);g.connect(eng.master);o.start(t);o.stop(t+.08);
   const c=el("cross"); if(c){ c.classList.add("hit"); setTimeout(()=>c.classList.remove("hit"),110); }
+  const hm=el("hitm"); if(hm){ hm.classList.add("show"); setTimeout(()=>hm.classList.remove("show"),130); }
+}
+
+/* --------------------------------------------------------------------------
+   Dying. A machine that simply vanishes reads as a bug, so a killed rider
+   coasts to a stop pouring black smoke for a second and a half, and then the
+   fuel goes up: fireball, flash, debris, and a boom you feel across the map.
+   ------------------------------------------------------------------------ */
+const WRECKS=[];
+let debrisPool=null, debrisN=0;
+function buildWreckFX(){
+  if(debrisPool) return;
+  debrisPool=new THREE.InstancedMesh(new THREE.TetrahedronGeometry(.34,0),
+    new THREE.MeshPhongMaterial({color:0x2a2622,flatShading:true}),160);
+  debrisPool.frustumCulled=false;
+  debrisPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(debrisPool);
+  debrisPool.userData.bits=[];
+  for(let i=0;i<160;i++) debrisPool.userData.bits.push({life:0,x:0,y:-999,z:0,vx:0,vy:0,vz:0,s:1});
+}
+function spawnWreck(px,py,color){
+  buildWreckFX();
+  const g=new THREE.Group();
+  const y=height(px,py);
+  g.position.set(toWX(px),y,toWZ(py));
+  const hull=new THREE.Mesh(new THREE.BoxGeometry(1.5,.6,2.3),
+    new THREE.MeshPhongMaterial({color:color||0x2f3a2c,flatShading:true}));
+  hull.position.y=.75; g.add(hull);
+  const smoke=new THREE.InstancedMesh(new THREE.SphereGeometry(.62,6,5),
+    new THREE.MeshBasicMaterial({color:0x171512,transparent:true,opacity:.62,depthWrite:false}),34);
+  smoke.frustumCulled=false; smoke.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  g.add(smoke);
+  const fire=new THREE.Mesh(new THREE.SphereGeometry(1,10,8),
+    new THREE.MeshBasicMaterial({color:0xffa437,transparent:true,opacity:0,
+      blending:THREE.AdditiveBlending,depthWrite:false}));
+  fire.position.y=1.1; g.add(fire);
+  const lamp=new THREE.PointLight(0xff8a30,0,60,2); lamp.position.y=1.4; g.add(lamp);
+  scene.add(g);
+  WRECKS.push({g,smoke,fire,lamp,px,py,t:0,blew:false,puffs:[],emit:0});
+  smokeCough();
+}
+function stepWrecks(dt){
+  const o=new THREE.Object3D();
+  for(let i=WRECKS.length-1;i>=0;i--){
+    const w=WRECKS[i];
+    w.t+=dt;
+    /* black smoke while it burns */
+    if(!w.blew){
+      w.emit+=dt*22;
+      while(w.emit>=1&&w.puffs.length<34){
+        w.emit-=1;
+        w.puffs.push({x:(Math.random()-.5)*.7,y:.8,z:(Math.random()-.5)*.7,
+                      vy:1.4+Math.random()*1.5,life:1,s:.4+Math.random()*.4});
+      }
+    }
+    for(const p of w.puffs){
+      p.y+=p.vy*dt; p.x+=dt*.35; p.life-=dt*.55; p.s+=dt*1.5;
+    }
+    w.puffs=w.puffs.filter(p=>p.life>0);
+    for(let k=0;k<34;k++){
+      const p=w.puffs[k];
+      if(p){ o.position.set(p.x,p.y,p.z); o.scale.setScalar(p.s*p.life); }
+      else o.position.set(0,-999,0), o.scale.setScalar(.001);
+      o.updateMatrix(); w.smoke.setMatrixAt(k,o.matrix);
+    }
+    w.smoke.instanceMatrix.needsUpdate=true;
+    /* and then it goes up */
+    if(!w.blew&&w.t>1.55){
+      w.blew=true;
+      w.fire.material.opacity=1; w.lamp.intensity=90;
+      w.g.children[0].visible=false;
+      bigBoom();
+      throwDebris(w.px,w.py);
+      shakeFrom(w.px,w.py);
+    }
+    if(w.blew){
+      const k2=(w.t-1.55);
+      w.fire.scale.setScalar(1+k2*7);
+      w.fire.material.opacity=Math.max(0,1-k2*1.5);
+      w.lamp.intensity=Math.max(0,90-k2*220);
+    }
+    if(w.t>3.4){ scene.remove(w.g); WRECKS.splice(i,1); }
+  }
+  /* debris */
+  if(debrisPool){
+    const bits=debrisPool.userData.bits;
+    for(let i=0;i<bits.length;i++){
+      const b=bits[i];
+      if(b.life>0){
+        b.life-=dt; b.vy-=26*dt;
+        b.x+=b.vx*dt; b.y+=b.vy*dt; b.z+=b.vz*dt;
+        const g2=height(toPX(b.x),toPY(b.z));
+        if(b.y<g2){ b.y=g2; b.vy*=-.28; b.vx*=.6; b.vz*=.6; }
+        o.position.set(b.x,b.y,b.z);
+        o.rotation.set(b.life*7,b.life*5,b.life*3);
+        o.scale.setScalar(b.s);
+      }else o.position.set(0,-999,0), o.scale.setScalar(.001);
+      o.updateMatrix(); debrisPool.setMatrixAt(i,o.matrix);
+    }
+    debrisPool.instanceMatrix.needsUpdate=true;
+  }
+}
+function throwDebris(px,py){
+  buildWreckFX();
+  const bits=debrisPool.userData.bits;
+  const x=toWX(px), y=height(px,py)+.8, z=toWZ(py);
+  let made=0;
+  for(let i=0;i<bits.length&&made<26;i++){
+    const b=bits[i]; if(b.life>0)continue;
+    const a=Math.random()*6.2832, sp=7+Math.random()*13;
+    b.x=x; b.y=y; b.z=z;
+    b.vx=Math.cos(a)*sp*.55; b.vy=6+Math.random()*11; b.vz=Math.sin(a)*sp*.55;
+    b.life=1.4+Math.random()*.8; b.s=.5+Math.random()*.9; made++;
+  }
+}
+function shakeFrom(px,py){
+  if(!state)return;
+  const d=Math.hypot(state.px-px,state.py-py)*S;
+  state.shake=Math.max(state.shake,Math.max(0,.8-d/90));
+}
+function smokeCough(){
+  if(!eng||!actx)return;
+  const t=actx.currentTime, n=actx.createBufferSource(); n.buffer=eng.noiseBuf;
+  const g=actx.createGain(); g.gain.setValueAtTime(.10,t);
+  g.gain.exponentialRampToValueAtTime(.0006,t+.5);
+  const f=actx.createBiquadFilter(); f.type="lowpass"; f.frequency.value=520;
+  n.connect(f);f.connect(g);g.connect(eng.master); n.start(t); n.stop(t+.6);
+}
+function bigBoom(){
+  if(!eng||!actx)return;
+  const t=actx.currentTime;
+  const n=actx.createBufferSource(); n.buffer=eng.noiseBuf;
+  const ng=actx.createGain(); ng.gain.setValueAtTime(.85,t);
+  ng.gain.exponentialRampToValueAtTime(.0006,t+.85);
+  const lp=actx.createBiquadFilter(); lp.type="lowpass";
+  lp.frequency.setValueAtTime(2200,t); lp.frequency.exponentialRampToValueAtTime(180,t+.7);
+  n.connect(lp);lp.connect(ng);ng.connect(eng.master); n.start(t); n.stop(t+1);
+  const o=actx.createOscillator(), og=actx.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(92,t);
+  o.frequency.exponentialRampToValueAtTime(24,t+.6);
+  og.gain.setValueAtTime(.95,t); og.gain.exponentialRampToValueAtTime(.0005,t+.8);
+  o.connect(og);og.connect(eng.master);o.start(t);o.stop(t+.9);
 }
 
 /* ==========================================================================
@@ -3141,6 +3373,12 @@ function stepFeed(dt){
   for(const f of FEED){ f.t-=dt; if(f.t>0)live=true; }
   if(!live&&el("feed")) el("feed").classList.remove("show");
 }
+function killBot(T){
+  const ref=T.ref; if(!ref)return;
+  spawnWreck(ref.px,ref.py,T.role==="seeker"?0x6d2622:0x2f4a2c);
+  ref.dead=2.0; ref.out=true;                    // gone while the wreck burns
+  setTimeout(()=>{ if(ref){ ref.dead=0; ref.out=false; respawnBot({ref}); } },2000);
+}
 function respawnBot(T){
   const ref=T.ref; if(!ref)return;
   let sp=ARENA_SPAWNS[(Math.random()*ARENA_SPAWNS.length)|0];
@@ -3150,6 +3388,7 @@ function respawnBot(T){
 }
 function youDied(byName){
   const st=state;
+  spawnWreck(st.px,st.py,myRig==="foreman"?0x8a6a12:0x2f4a2c);
   st.deaths=(st.deaths||0)+1; st.respawn=RESPAWN_S; st.hp=MAXHP;
   killFeed(byName||"SOMEBODY",myName||"YOU");
   say("◂ YOU'RE HIT — BACK IN "+RESPAWN_S+" ▸",2.6);
@@ -3179,6 +3418,7 @@ function takeDamage(dmg,byName){
 
 /* AI fighters: drive at the nearest enemy and shoot it */
 function battleAI(u,st,dt,name,idx){
+  if(u.dead>0){ u.dead-=dt; return; }            // burning, not fighting
   if(u.hp===undefined)u.hp=MAXHP;
   if(u.wi===undefined)u.wi=(idx+1)%WEAPONS.length;
   const W=WEAPONS[u.wi];
@@ -3208,7 +3448,7 @@ function battleAI(u,st,dt,name,idx){
       if(meTarget) takeDamage(W.dmg,name);
       else if(tref){ tref.hp=(tref.hp===undefined?MAXHP:tref.hp)-W.dmg;
         if(tref.hp<=0){ tref.hp=MAXHP; killFeed(name,"a bot");
-          respawnBot({ref:tref}); } }
+          killBot({ref:tref,role:"hider"}); } }
     }
   }
 }
@@ -3686,7 +3926,7 @@ function tick(){
        where the barrel is pointing so the crosshair means something */
     const cp=Math.cos(st.tpitch);
     const f=new THREE.Vector3(Math.cos(st.tyaw)*cp,Math.sin(st.tpitch),Math.sin(st.tyaw)*cp);
-    const back=st.zoom?3.4:6.6, up=st.zoom?1.9:2.9;
+    const back=st.scoped?0.35:(st.zoom?3.4:6.6), up=st.scoped?2.15:(st.zoom?1.9:2.9);
     const want=me.atv.position.clone().add(new THREE.Vector3(0,up,0))
                  .addScaledVector(f,-back)
                  .add(new THREE.Vector3(-Math.sin(st.tyaw),0,Math.cos(st.tyaw)).multiplyScalar(1.15));
@@ -3694,7 +3934,7 @@ function tick(){
     cam.position.lerp(want,Math.min(1,dt*11));
     const look=me.atv.position.clone().add(new THREE.Vector3(0,1.75,0)).addScaledVector(f,60);
     cam.lookAt(look);
-    const fovWant=st.zoom?42:66;
+    const fovWant=st.scoped?11:(st.zoom?42:66);
     if(Math.abs(cam.fov-fovWant)>0.2){ cam.fov+=(fovWant-cam.fov)*Math.min(1,dt*10);
                                        cam.updateProjectionMatrix(); }
   }else if(spec.on){
@@ -3709,7 +3949,7 @@ function tick(){
     cam.lookAt(me.atv.position.clone().add(fwd.clone().multiplyScalar(28)).add(new THREE.Vector3(0,1.7,0)));
   }
 
-  if(GUNS){ buildTurretOn(me); poseTurret(st,me); stepCombatFX(dt); }
+  if(GUNS){ buildTurretOn(me); poseTurret(st,me); stepCombatFX(dt); stepWrecks(dt); }
   stepSplash(dt); stepSmoke(dt); stepBear(dt,st.px,st.py); stepAtmos(dt,st.t);
   stepFireworks(dt); stepNades(dt); stepLocalRound(dt);
   if(st.shake>0.002){const s2=st.shake*0.55;
@@ -3721,6 +3961,7 @@ function tick(){
 
 function updateHUD(nearestPx){
   const st=state;
+  const rt=el("rosterTitle"); if(rt) rt.textContent=battleMode()?"IN THE BASIN":"ON THE FARM";
   el("stat").style.display=(spec.on||battleMode())?"none":"";
   if(battleMode()){
     el("obj").style.display="none";
@@ -3777,7 +4018,18 @@ function updateHUD(nearestPx){
   el("modeN").textContent=st.adv?"MANUAL":"AUTO";
   if(GUNS){
     const W=wep(), live=!spec.on&&!st.out&&running&&(st.respawn||0)<=0;
-    el("cross").classList.toggle("show",live&&(st.down||0)<=0&&mouseLocked);
+    const scoped=!!st.scoped;
+    el("scope").classList.toggle("show",scoped&&live);
+    el("cross").classList.toggle("show",live&&(st.down||0)<=0&&mouseLocked&&!scoped);
+    /* the gap opens with the gun's spread, how fast you're moving and recoil,
+       so the crosshair tells you how honest your next shot is */
+    const gap=Math.round(9 + W.spread*820 + Math.min(1,Math.abs(st.spd)/16)*11
+                           + (st.kick||0)*9);
+    const cx=el("cross");
+    cx.querySelector(".ct").style.transform="translateY("+(-gap-15)+"px)";
+    cx.querySelector(".cb").style.transform="translateY("+gap+"px)";
+    cx.querySelector(".cl").style.transform="translateX("+(-gap-15)+"px)";
+    cx.querySelector(".cr").style.transform="translateX("+gap+"px)";
     el("ammo").classList.toggle("show",live);
     el("ammo").classList.toggle("low",st.ammo<=Math.max(2,W.mag*.2));
     el("ammoN").textContent=st.ammo;
@@ -4017,8 +4269,9 @@ document.addEventListener("pointerlockchange",()=>{
 });
 addEventListener("mousemove",e=>{
   if(!GUNS||!mouseLocked||!state||paused) return;
-  state.tyaw += e.movementX*AIMSENS;
-  state.tpitch = Math.max(-0.40,Math.min(0.62,state.tpitch - e.movementY*AIMSENS));
+  const fine=state.scoped?0.20:(state.zoom?0.55:1);   // glass slows your hands down
+  state.tyaw += e.movementX*AIMSENS*fine;
+  state.tpitch = Math.max(-0.40,Math.min(0.62,state.tpitch - e.movementY*AIMSENS*fine));
 });
 addEventListener("mousedown",e=>{
   if(!GUNS) return;
@@ -4026,11 +4279,11 @@ addEventListener("mousedown",e=>{
   if(el("start").classList.contains("hide")&&!paused){
     if(!mouseLocked){ lockMouse(); return; }
     if(e.button===0){ firing=true; fireGun(); }
-    if(e.button===2){ state.zoom=true; }
+    if(e.button===2){ state.zoom=true; state.scoped=(wep().id==="br"); }
   }
 });
 addEventListener("mouseup",e=>{ if(e.button===0) firing=false;
-                                if(e.button===2&&state) state.zoom=false; });
+  if(e.button===2&&state){ state.zoom=false; state.scoped=false; } });
 addEventListener("contextmenu",e=>{ if(GUNS&&running) e.preventDefault(); });
 addEventListener("wheel",e=>{
   if(!GUNS||!state||!mouseLocked) return;
