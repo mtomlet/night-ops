@@ -55,6 +55,24 @@
          text-shadow:0 2px 10px rgba(0,0,0,.95),0 0 3px rgba(0,0,0,.9)}
   #radio.show{opacity:1}
 
+  #cross{top:50%;left:50%;width:26px;height:26px;transform:translate(-50%,-50%);opacity:0;
+         transition:opacity .18s}
+  #cross.show{opacity:.92}
+  #cross i{position:absolute;background:#eaf3ec;box-shadow:0 0 3px rgba(0,0,0,.85)}
+  #cross i:nth-child(1){left:11.5px;top:0;width:3px;height:8px}
+  #cross i:nth-child(2){left:11.5px;bottom:0;width:3px;height:8px}
+  #cross i:nth-child(3){top:11.5px;left:0;height:3px;width:8px}
+  #cross i:nth-child(4){top:11.5px;right:0;height:3px;width:8px}
+  #cross b{position:absolute;left:12px;top:12px;width:2px;height:2px;background:#ffd76a;
+           border-radius:50%}
+  #ammo{right:22px;bottom:104px;text-align:right;opacity:0;transition:opacity .2s}
+  #ammo.show{opacity:1}
+  #ammoN{font-size:30px;color:#eef5ea;letter-spacing:.04em}
+  #ammoS{font-size:13px;color:#6f7f74;margin-left:5px;letter-spacing:.12em}
+  #ammoR{display:block;font-size:10px;letter-spacing:.22em;color:#ffd76a;
+         font-style:normal;visibility:hidden}
+  #ammo.low #ammoN{color:#ff8a70}
+
   #specBar{bottom:22px;left:50%;transform:translateX(-50%);text-align:center;
            background:rgba(6,11,9,.82);border:1px solid rgba(120,240,210,.28);
            border-radius:3px;padding:9px 22px;opacity:0;transition:opacity .3s;
@@ -186,6 +204,8 @@
 
 <div class="hud" id="alert"></div>
 <div class="hud" id="radio"></div>
+<div class="hud" id="cross"><i></i><i></i><i></i><i></i><b></b></div>
+<div class="hud" id="ammo"><span id="ammoN">8</span><span id="ammoS">/ 8</span><i id="ammoR">RELOADING</i></div>
 <div class="hud" id="specBar"><div id="specWho"></div><div id="specHint"></div></div>
 <div class="hud" id="ptt">◉ TRANSMITTING</div>
 <div class="hud" id="rx"></div>
@@ -220,6 +240,14 @@
   </div>
   <div class="nameRow">
     <input id="nameIn" maxlength="14" placeholder="YOUR NAME">
+    <select id="mapIn">
+      <option value="night" selected>NIGHT — headlights and dark</option>
+      <option value="day">DAY — broad daylight, no hiding in the dark</option>
+    </select>
+    <select id="gunIn">
+      <option value="off" selected>NO GUNS — lights and eyes only</option>
+      <option value="on">GUNS — everybody carries a Makarov</option>
+    </select>
     <select id="qIn"></select>
     <select id="fpsIn">
       <option value="30">30 fps — quietest fans</option>
@@ -521,6 +549,15 @@ const BEAM_PX=BEAM_M*M2P, SPOT_PX=SPOT_M*M2P, KUB_PX=KUB_M*M2P;
 const POINTBLANK_PX=POINTBLANK_M*M2P;
 const BEAM_HALF=0.40, KUB_HALF=1.02;
 
+/* In daylight there is no beam to hold on you — he just has to get on you and
+   keep you in front of him. Further than a headlight reaches and a much wider
+   arc, because he is looking with his eyes, not aiming a lamp. Brush still
+   hides you, and he still has to come point blank to call you in it. */
+const EYES_M=95, EYES_PX=EYES_M*M2P, EYES_HALF=0.95;
+const tagRange=()=>isDay()?EYES_PX:BEAM_PX;
+const tagHalf =()=>isDay()?EYES_HALF:BEAM_HALF;
+const tagArmed=lightsOn=>isDay()?true:!!lightsOn;
+
 const SPAWNS={hider:[[348,706],[382,566],[334,776],[303,986],[529,640]],
               seeker:[[838,1372],[923,1220],[506,376],[922,606]],
               kubota:[[900,1288],[560,470],[900,1010]]};
@@ -542,6 +579,13 @@ const QUAL={
           stars:6500, nvStars:13000,fw:2400, smk:900, spl:420, dst:220, fly:460,
           far:2400, fog:0.8,  aniso:16,tSeg:7, cSeg:9, note:"desktop GPU — everything on"}
 };
+/* Two things you pick before you drop in. Night is the original game and is
+   untouched by any of this; day changes how he finds you, because a headlight
+   beam means nothing at noon. */
+let MAPMODE=localStorage.getItem("nightops.map")||"night";
+let GUNS=localStorage.getItem("nightops.guns")==="on";
+const isDay=()=>MAPMODE==="day";
+
 let Q=QUAL[localStorage.getItem("nightops.q")||"high"]||QUAL.high;
 
 const GEARS=[{n:"R",max:-5,tq:1.3},{n:"N",max:0,tq:0},{n:"1",max:6.5,tq:2.35},{n:"2",max:10,tq:1.35},
@@ -678,14 +722,21 @@ function addChunked(spots,geo,mat,place){
   return out;
 }
 function buildWorld(tex){
+  const DAY=isDay();
   scene=new THREE.Scene();
-  scene.background=new THREE.Color(0x05080d);
-  scene.fog=new THREE.FogExp2(0x05080d,0.0026*Q.fog);
+  scene.background=new THREE.Color(DAY?0x8fb8dd:0x05080d);
+  scene.fog=new THREE.FogExp2(DAY?0xa9c9e4:0x05080d,(DAY?0.00052:0.0026)*Q.fog);
   cam=new THREE.PerspectiveCamera(66,innerWidth/innerHeight,.4,Q.far);
 
-  scene.userData.amb=new THREE.AmbientLight(0x1a2740,.075); scene.add(scene.userData.amb);
-  const moon=new THREE.DirectionalLight(0xaec6e6,.085);moon.position.set(-260,340,-200);scene.add(moon);
-  scene.userData.hemi=new THREE.HemisphereLight(0x1d2c44,0x090f0c,.055);scene.add(scene.userData.hemi);
+  scene.userData.amb=new THREE.AmbientLight(DAY?0x9fb4c9:0x1a2740,DAY?0.95:.075);
+  scene.add(scene.userData.amb);
+  /* the moon at night, the sun at noon — same light, different day */
+  const moon=new THREE.DirectionalLight(DAY?0xfff3dd:0xaec6e6,DAY?1.15:.085);
+  moon.position.set(DAY?420:-260,DAY?620:340,DAY?280:-200); scene.add(moon);
+  scene.userData.sun=moon;
+  scene.userData.hemi=new THREE.HemisphereLight(DAY?0xbcd8f0:0x1d2c44,
+                                               DAY?0x4c5638:0x090f0c,DAY?0.60:.055);
+  scene.add(scene.userData.hemi);
 
   /* ---------------- sky ---------------- */
   const starN=Q.stars, sPos=new Float32Array(starN*3), sCol=new Float32Array(starN*3), sSz=new Float32Array(starN);
@@ -745,6 +796,36 @@ function buildWorld(tex){
   moonGrp.position.set(-780,470,-900); moonGrp.lookAt(0,60,0);
   moonGrp.renderOrder=-1; scene.add(moonGrp);
   scene.userData.sky=[stars,moonGrp];
+
+  /* daylight: the stars and the moon come down, a sun goes up, and a few
+     clouds sit over the far treeline so the sky isn't a flat blue wall */
+  if(DAY){
+    stars.visible=false; nvStars.visible=false; moonGrp.visible=false;
+    const sunGrp=new THREE.Group();
+    sunGrp.add(new THREE.Mesh(new THREE.CircleGeometry(38,40),
+      new THREE.MeshBasicMaterial({color:0xfffdf0,fog:false})));
+    const flare=new THREE.Sprite(new THREE.SpriteMaterial({color:0xfff0c4,transparent:true,
+      opacity:.42,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));
+    flare.scale.set(210,210,1); sunGrp.add(flare);
+    sunGrp.position.set(700,1080,480); sunGrp.lookAt(0,60,0);
+    sunGrp.renderOrder=-1; scene.add(sunGrp);
+    const cloudM=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,
+      opacity:.5,depthWrite:false,fog:false});
+    const clouds=new THREE.Group();
+    for(let i=0;i<26;i++){
+      const a2=Math.random()*6.2832, r=780+Math.random()*380;
+      const g2=new THREE.Group();
+      for(let k=0;k<3+((Math.random()*3)|0);k++){
+        const m=new THREE.Mesh(new THREE.SphereGeometry(22+Math.random()*30,7,5),cloudM);
+        m.position.set((Math.random()-.5)*90,(Math.random()-.5)*16,(Math.random()-.5)*50);
+        m.scale.y=.45; g2.add(m);
+      }
+      g2.position.set(Math.cos(a2)*r,240+Math.random()*190,Math.sin(a2)*r);
+      clouds.add(g2);
+    }
+    clouds.renderOrder=-1; scene.add(clouds);
+    scene.userData.sky=[sunGrp,clouds];
+  }
 
   const SEG=Q.seg;
   const gt=new THREE.PlaneGeometry(WW,WH,SEG,SEG);gt.rotateX(-Math.PI/2);
@@ -825,6 +906,7 @@ function buildWorld(tex){
       d.rotation.set(((px*5)%50)/100,(py*19)%6.28,((py*3)%50)/100);
       d.scale.set(sc*1.35,sc*.95,sc*1.35); });
   buildMud(); buildFirePit(); buildBear(); buildAtmos(); buildFireworks(); buildSmoke();
+  buildGun();
   // spatial buckets so the hide check is cheap
   bushGrid={};
   for(const[px,py]of bushes){
@@ -1165,6 +1247,7 @@ function buildAtmos(){
     new THREE.MeshBasicMaterial({color:0xcfff7a,transparent:true,opacity:.9,
       blending:THREE.AdditiveBlending,depthWrite:false}),n);
   flies.frustumCulled=false; flies.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(flies);
+  flies.visible=!isDay();                      // fireflies don't come out at noon
   for(let i=0;i<n;i++){
     let px,py,g=0;
     do{ px=Math.random()*IW; py=Math.random()*IH; g++; }while(!drivable(px,py)&&g<300);
@@ -1172,7 +1255,7 @@ function buildAtmos(){
                h:.6+Math.random()*2.4,blink:Math.random()*4});
   }
   // mist settles in the low ground
-  mistGrp=new THREE.Group(); scene.add(mistGrp);
+  mistGrp=new THREE.Group(); mistGrp.visible=!isDay(); scene.add(mistGrp);
   const mistM=new THREE.MeshBasicMaterial({color:0xb9cbd6,transparent:true,opacity:.055,
     depthWrite:false,side:THREE.DoubleSide});
   for(const spot of [[838,1372],[880,1420],[790,1300],[330,1040],[300,980],[920,1480]]){
@@ -1745,6 +1828,18 @@ function connect(){
       p.px=m.x;p.py=m.y;p.hdg=m.h;p.lights=!!m.l;p.nv=!!m.v;p.role=m.r;p.out=!!m.o;p.rig=m.k||"rancher";
       p.spd=m.sp||0; p.engine=m.e===undefined?true:!!m.e;
       p.name=p.name||("P"+m.id);p.t=now;players.set(m.id,p);
+    }else if(m.t==="shot"){
+      if(m.from&&m.to&&tracerPool){
+        const f=new THREE.Vector3(m.from[0],m.from[1],m.from[2]);
+        const t=new THREE.Vector3(m.to[0],m.to[1],m.to[2]);
+        tracer(f,t,false);
+        if(state) gunShot(f.distanceTo(cam.position)>55);
+      }
+    }else if(m.t==="down"){
+      if(m.target===myId&&state&&myRole==="seeker"&&!state.out){
+        state.down=DOWN_S; state.engine=false;
+        say("◂ YOU'RE HIT — ENGINE'S DEAD, "+DOWN_S+" SECONDS ▸",3.2);
+      }
     }else if(m.t==="tag"){
       if(m.target===myId&&state&&!state.out){ state.out=true; goGhost(); }
       else{const p=players.get(m.target);if(p)p.out=true;}
@@ -1978,6 +2073,7 @@ function respawnForRound(){
   specExit();
   state.wipe=0; state.air=false; state.cans=0; state.phase="collect";
   state.engine=true; state.crank=0; state.mudScreen=0;
+  state.ammo=MAG; state.reload=0; state.down=0; state.kick=0;
   state.smokes=2; state.beamHold=0; state.lock={}; nades.length=0;
   for(const c of canMeshes){c.got=false;c.fill=0;c.grp.visible=true;c.halo.visible=true;}
   extractMesh.visible=false; extractRing.visible=false;
@@ -2002,6 +2098,7 @@ function freshState(){
     beamHold:0,lock:{},bestLock:0,smokes:2,
     prevThr:0,shiftKick:0,squat:0,fuel:0,pumping:-1,
     engine:true,crank:0,
+    ammo:MAG,reload:0,kick:0,down:0,
     lights:true,nv:false,out:false,stuck:0,
     t:0,cans:0,phase:"collect",tagged:0,
     ai:{seek:aiUnit(838,1372),hiders:[aiUnit(402,498),aiUnit(856,690),aiUnit(923,1220)]},
@@ -2103,10 +2200,19 @@ function driveAt(u,tx,ty,mps,dt){
 }
 function huntPhase(){ return serverDriving()?RS.phase==="running":LR.phase==="running"; }
 
+/* somebody out on the farm took a shot — draw it and let you hear it */
+function aiShotFX(fromPx,fromPy,toPx,toPy){
+  if(!tracerPool) return;
+  const f=new THREE.Vector3(toWX(fromPx),height(fromPx,fromPy)+1.25,toWZ(fromPy));
+  const t=new THREE.Vector3(toWX(toPx),height(toPx,toPy)+1.15,toWZ(toPy));
+  tracer(f,t,false);
+  gunShot(f.distanceTo(cam.position)>55);
+}
 function smartSeeker(s,st,dt){
   if(s.si===undefined){s.si=0;s.mode="patrol";s.memo=0;s.sweep=0;s.lock={};s.spot=null;}
   trackVel(s,dt);
   if(!huntPhase()){ s.sweep=Math.sin(st.t*0.8)*0.45; s.spd=0; return; }
+  if((s.down||0)>0){ s.spd=0; s.sweep=Math.sin(st.t*1.4)*0.2; return; }   // he's hit, he's parked
 
   /* -------- everyone he could be looking for -------- */
   const cand=[];
@@ -2128,7 +2234,7 @@ function smartSeeker(s,st,dt){
     const hidden=inBush(c.px,c.py)||inSmoke(c.px,c.py);
     const lamp = c.lights && d<SPOT_PX && losOpen(s.px,s.py,c.px,c.py) &&
                  !smokeBlocks(s.px,s.py,c.px,c.py);            // your own lights give you up
-    const beam = seeable(s.px,s.py,hd,c.px,c.py,BEAM_PX*1.15,BEAM_HALF*1.45,true,hidden);
+    const beam = seeable(s.px,s.py,hd,c.px,c.py,tagRange()*1.15,tagHalf()*1.45,true,hidden);
     if((lamp||beam)&&d<seenD){seenD=d;seen=c;}
     const nz=noiseM(c)*M2P;                                    // ears ignore brush and beams
     if(nz>0&&d<nz&&d<heardD){heardD=d;heard=c;}
@@ -2162,12 +2268,29 @@ function smartSeeker(s,st,dt){
   if(driveAt(s,gx,gy,mps,dt)&&s.mode==="patrol") s.spot=null;
   s.spd=mps;
 
+  /* -------- with a pistol on him he doesn't have to run you down -------- */
+  if(GUNS&&(s.down||0)<=0){
+    if(s.mag===undefined){s.mag=MAG;s.gun=1.2;s.aim=0;}
+    s.gun=(s.gun||0)-dt;
+    s.aim=seen?Math.min(2,(s.aim||0)+dt):0;             // he has to settle on you first
+    if(seen&&seenD*S<GUN_RANGE&&s.aim>0.6&&s.gun<=0){
+      if(s.mag<=0){ s.mag=MAG; s.gun=2.1; }             // reloading
+      else{
+        s.mag--; s.gun=0.85+Math.random()*0.75;
+        const m=seenD*S, mover=Math.abs(seen.spd||0);
+        const chance=Math.max(0.05,Math.min(0.5,0.58-m/210-mover/42));
+        aiShotFX(s.px,s.py,seen.px,seen.py);
+        if(Math.random()<chance) seekerBullet(seen,st);
+      }
+    }
+  }
+
   /* -------- he tags the AI hiders too — same 2 second hold -------- */
   const hd2=s.hdg+(s.sweep||0);
   for(let i=0;i<st.ai.hiders.length;i++){
     const h=st.ai.hiders[i];
     if(h.out){s.lock[i]=0;continue;}
-    const lit=seeable(s.px,s.py,hd2,h.px,h.py,BEAM_PX,BEAM_HALF,true,
+    const lit=seeable(s.px,s.py,hd2,h.px,h.py,tagRange(),tagHalf(),true,
                       inBush(h.px,h.py)||inSmoke(h.px,h.py));
     s.lock[i]=lit?(s.lock[i]||0)+dt:Math.max(0,(s.lock[i]||0)-dt*1.6);
     if(s.lock[i]>=DWELL){
@@ -2177,6 +2300,18 @@ function smartSeeker(s,st,dt){
   }
 }
 
+function seekerBullet(target,st){
+  if(myRole==="hider"&&!st.out&&Math.abs(target.px-st.px)<2&&Math.abs(target.py-st.py)<2){
+    st.out=true; if(netOK) send({t:"tag",target:myId});
+    say("◂ HE SHOT YOU — YOU'RE OUT ▸",3.2); goGhost(); return;
+  }
+  for(let i=0;i<st.ai.hiders.length;i++){
+    const h=st.ai.hiders[i];
+    if(!h.out&&Math.abs(target.px-h.px)<2&&Math.abs(target.py-h.py)<2){
+      h.out=true; radioIn(AI_NAMES[i%AI_NAMES.length],"I'm hit — I'm out.",0.2); return;
+    }
+  }
+}
 function smartHider(h,st,dt,i){
   if(h.mps===undefined){h.mps=0;h.spot=null;h.wander=0;h.engine=true;}
   let tx=0,ty=0,td=1e9;
@@ -2230,6 +2365,20 @@ function smartHider(h,st,dt,i){
     if(!parked) driveAt(h,h.spot[0],h.spot[1],h.mps,dt);
   }
   trackVel(h,dt);
+
+  /* he's close and they're armed — somebody is going to take a shot */
+  if(GUNS&&huntPhase()&&!humanSeekerExists()&&st.ai.seek&&(st.ai.seek.down||0)<=0){
+    const sk=st.ai.seek, d2=Math.hypot(sk.px-h.px,sk.py-h.py)*S;
+    h.gun=(h.gun===undefined?2+Math.random()*3:h.gun)-dt;
+    if(d2<80&&h.gun<=0&&losOpen(h.px,h.py,sk.px,sk.py)){
+      h.gun=2.6+Math.random()*3.4;
+      aiShotFX(h.px,h.py,sk.px,sk.py);
+      if(Math.random()<Math.max(0.06,0.42-d2/190)){
+        sk.down=DOWN_S; sk.mode="patrol"; sk.memo=0;
+        radioIn(AI_NAMES[i%AI_NAMES.length],"I hit him — he's stopped at "+where(sk.px,sk.py)+".",0.25);
+      }
+    }
+  }
 }
 
 /* ==========================================================================
@@ -2494,6 +2643,219 @@ function aiContactCalls(st,dt){
   }
 }
 
+/* ==========================================================================
+   GUNS — off by default, and the game is exactly what it was without them.
+   Switch them on and everybody is carrying a Makarov. Eight rounds, and it
+   changes who is dangerous: the seeker no longer has to drive you down, and
+   you are no longer helpless when he does.
+
+   Seeker puts one in you        -> you're out, same as being caught
+   You put one in the seeker     -> he's down nine seconds, engine dead
+   ========================================================================== */
+const MAG=8, RELOAD_S=1.5, GUN_RANGE_M=110, DOWN_S=9;
+const GUN_RANGE=GUN_RANGE_M;                      // world units are metres
+
+let gunView=null, muzzleFlash=null, muzzleLight=null, tracers=[], tracerPool=null;
+
+function buildGun(){
+  if(gunView||!GUNS) return;
+  /* a Makarov. Slab slide, straight blowback, brown bakelite grips. */
+  const g=new THREE.Group();
+  const steel=new THREE.MeshPhongMaterial({color:0x24262a,shininess:78,specular:0x8a8f99});
+  const dark =new THREE.MeshPhongMaterial({color:0x15171a,shininess:40});
+  const grip =new THREE.MeshPhongMaterial({color:0x4a2a17,shininess:14});
+  const add=(geo,mat,x,y,z,rx)=>{const m=new THREE.Mesh(geo,mat);
+    m.position.set(x,y,z); if(rx)m.rotation.x=rx; g.add(m); return m;};
+  add(new THREE.BoxGeometry(.058,.062,.240),steel,0,0,-.020);          // slide
+  add(new THREE.BoxGeometry(.060,.020,.052),dark ,0,.028,-.128);       // rear sight shelf
+  add(new THREE.BoxGeometry(.010,.014,.012),dark ,0,.040,.086);        // front blade
+  add(new THREE.BoxGeometry(.050,.040,.150),dark ,0,-.052,-.030);      // frame
+  add(new THREE.BoxGeometry(.046,.115,.062),grip ,0,-.118,-.086,0.19); // grip
+  add(new THREE.BoxGeometry(.014,.038,.014),dark ,0,-.074,-.020);      // trigger
+  add(new THREE.TorusGeometry(.030,.007,6,12),dark,0,-.076,-.020,1.571);
+  add(new THREE.CylinderGeometry(.011,.011,.030,10),dark,0,.002,.106,1.571); // muzzle
+  g.traverse(o=>{o.frustumCulled=false;});
+  g.renderOrder=800;
+  g.scale.setScalar(1.05);                    // sits further out than a real hand, so scale to match
+  gunView=g; cam.add(g); scene.add(cam);      // the camera has to be in the graph to draw its children
+
+  muzzleFlash=new THREE.Mesh(new THREE.SphereGeometry(.055,7,5),
+    new THREE.MeshBasicMaterial({color:0xffdc8a,transparent:true,opacity:0,
+      blending:THREE.AdditiveBlending,depthWrite:false,depthTest:false,fog:false}));
+  muzzleFlash.position.set(0,.002,.132); muzzleFlash.frustumCulled=false;
+  muzzleFlash.renderOrder=801; g.add(muzzleFlash);
+  muzzleLight=new THREE.PointLight(0xffcf7a,0,26,2); g.add(muzzleLight);
+  muzzleLight.position.set(0,.002,.14);
+
+  tracerPool=[];
+  const tm=new THREE.MeshBasicMaterial({color:0xffe7a8,transparent:true,opacity:0,
+    blending:THREE.AdditiveBlending,depthWrite:false,fog:false});
+  for(let i=0;i<10;i++){
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,1,5),tm.clone());
+    t.visible=false; t.frustumCulled=false; scene.add(t); tracerPool.push(t);
+  }
+}
+function placeGun(st){
+  if(!gunView) return;
+  const show=GUNS&&!spec.on&&!st.out&&!paused;
+  gunView.visible=show;
+  if(!show) return;
+  /* held low across the bars, brought up a little under power, kicked by recoil */
+  const k=st.kick||0, sway=Math.sin(st.t*2.1)*0.004+Math.sin(st.t*3.7)*0.002;
+  const bob=Math.min(1,Math.abs(st.spd)/12)*Math.sin(st.t*13)*0.010;
+  gunView.position.set(0.340,-0.300+sway*2+bob*2, -0.880+k*0.130);
+  gunView.rotation.set(-0.06+k*0.42+bob*0.5, 0.10, 0.04+k*0.05);
+}
+
+/* --- can a bullet actually get there, or is there a hill in the way? --- */
+function bulletClear(o,d,dist){
+  const n=Math.max(8,Math.min(56,dist/5));
+  for(let i=1;i<=n;i++){
+    const t=dist*i/n;
+    const x=o.x+d.x*t, y=o.y+d.y*t, z=o.z+d.z*t;
+    if(y<height(toPX(x),toPY(z))) return t;
+  }
+  return -1;
+}
+function raySphere(o,d,cx,cy,cz,r){
+  const ox=o.x-cx, oy=o.y-cy, oz=o.z-cz;
+  const b=ox*d.x+oy*d.y+oz*d.z, c=ox*ox+oy*oy+oz*oz-r*r;
+  const h=b*b-c; if(h<0) return -1;
+  const t=-b-Math.sqrt(h);
+  return t>0?t:-1;
+}
+function shootTargets(){
+  const st=state,out=[];
+  for(const[id,p]of players){ if(!p.role||p.out)continue;
+    out.push({kind:"p",id,role:p.role,px:p.px,py:p.py,name:p.name||("P"+id)}); }
+  if(!humanSeekerExists()&&st.ai.seek&&myRole!=="seeker")
+    out.push({kind:"ais",role:"seeker",px:st.ai.seek.px,py:st.ai.seek.py,name:"THE SEEKER"});
+  st.ai.hiders.forEach((h,i)=>{ if(!h.out)
+    out.push({kind:"aih",i,ref:h,role:"hider",px:h.px,py:h.py,
+              name:AI_NAMES[i%AI_NAMES.length]}); });
+  return out;
+}
+function tracer(from,to,strong){
+  if(!tracerPool) return;
+  const t=tracerPool.find(x=>!x.visible)||tracerPool[0];
+  const d=new THREE.Vector3().subVectors(to,from);
+  const len=d.length(); if(len<0.2) return;
+  t.scale.set(1,len,1);
+  t.position.copy(from).addScaledVector(d,0.5);
+  t.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize());
+  t.material.opacity=strong?0.95:0.55;
+  t.visible=true; t.userData.life=strong?0.09:0.06;
+}
+function stepTracers(dt){
+  if(!tracerPool) return;
+  for(const t of tracerPool){
+    if(!t.visible) continue;
+    t.userData.life-=dt;
+    t.material.opacity=Math.max(0,t.material.opacity-dt*9);
+    if(t.userData.life<=0||t.material.opacity<=0.01) t.visible=false;
+  }
+  if(muzzleFlash){
+    muzzleFlash.material.opacity=Math.max(0,muzzleFlash.material.opacity-dt*13);
+    muzzleFlash.scale.setScalar(1+(1-muzzleFlash.material.opacity)*0.8);
+  }
+  if(muzzleLight) muzzleLight.intensity=Math.max(0,muzzleLight.intensity-dt*70);
+}
+
+/* --------------------------------- audio --------------------------------- */
+function gunShot(far){
+  if(!eng||!actx) return;
+  const t=actx.currentTime, v=far?0.13:0.5;
+  const n=actx.createBufferSource(); n.buffer=eng.noiseBuf;
+  const ng=actx.createGain(); ng.gain.setValueAtTime(v,t);
+  ng.gain.exponentialRampToValueAtTime(.0006,t+(far?.20:.13));
+  const hp=actx.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=far?700:420;
+  const lp=actx.createBiquadFilter(); lp.type="lowpass";
+  lp.frequency.setValueAtTime(far?2600:8200,t);
+  lp.frequency.exponentialRampToValueAtTime(far?700:900,t+.12);
+  n.connect(hp);hp.connect(lp);lp.connect(ng);ng.connect(eng.master);
+  n.start(t); n.stop(t+.3);
+  const o=actx.createOscillator(), og=actx.createGain();     // the thump under the crack
+  o.type="sine"; o.frequency.setValueAtTime(far?90:165,t);
+  o.frequency.exponentialRampToValueAtTime(42,t+.10);
+  og.gain.setValueAtTime(v*.75,t); og.gain.exponentialRampToValueAtTime(.0005,t+.13);
+  o.connect(og); og.connect(eng.master); o.start(t); o.stop(t+.15);
+}
+function clickEmpty(){
+  if(!eng||!actx) return;
+  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  o.type="square"; o.frequency.setValueAtTime(2400,t);
+  g.gain.setValueAtTime(.05,t); g.gain.exponentialRampToValueAtTime(.0004,t+.035);
+  o.connect(g); g.connect(eng.master); o.start(t); o.stop(t+.04);
+}
+function magSound(seat){
+  if(!eng||!actx) return;
+  const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+  o.type="square"; o.frequency.setValueAtTime(seat?520:900,t);
+  o.frequency.exponentialRampToValueAtTime(seat?190:340,t+.05);
+  g.gain.setValueAtTime(.075,t); g.gain.exponentialRampToValueAtTime(.0005,t+.07);
+  o.connect(g); g.connect(eng.master); o.start(t); o.stop(t+.08);
+}
+
+/* --------------------------------- firing -------------------------------- */
+function reloadGun(){
+  const st=state;
+  if(!GUNS||!st||st.reload>0||st.ammo>=MAG||st.out||spec.on) return;
+  st.reload=RELOAD_S; magSound(false);
+  setTimeout(()=>{ if(state) magSound(true); },Math.round(RELOAD_S*700));
+}
+function fireGun(){
+  const st=state;
+  if(!GUNS||!st||st.out||spec.on||paused||!running) return;
+  if(st.reload>0) return;
+  if(st.ammo<=0){ clickEmpty(); reloadGun(); return; }
+  if(st.down>0) return;                                    // you're hit, you're not shooting
+  st.ammo--; st.kick=1; st.shake=Math.max(st.shake,0.06);
+  gunShot(false);
+  if(muzzleFlash) muzzleFlash.material.opacity=1;
+  if(muzzleLight) muzzleLight.intensity=13;
+
+  const o=cam.getWorldPosition(new THREE.Vector3());
+  const d=cam.getWorldDirection(new THREE.Vector3());
+  const muzzle=gunView?gunView.localToWorld(new THREE.Vector3(0,.002,.14)):o.clone();
+
+  const dirt=bulletClear(o,d,GUN_RANGE);
+  const wall=dirt<0?GUN_RANGE:dirt;
+  let best=null,bestT=wall;
+  for(const T of shootTargets()){
+    const tx=toWX(T.px), tz=toWZ(T.py), ty=height(T.px,T.py)+1.15;
+    const t=raySphere(o,d,tx,ty,tz,1.55);
+    if(t>0&&t<bestT){ bestT=t; best=T; }
+  }
+  const end=o.clone().addScaledVector(d,bestT);
+  tracer(muzzle,end,true);
+  const hidePh=serverDriving()?RS.phase==="hide":LR.phase==="hide";
+  if(netOK) send({t:"shot",from:[+muzzle.x.toFixed(1),+muzzle.y.toFixed(1),+muzzle.z.toFixed(1)],
+                  to:[+end.x.toFixed(1),+end.y.toFixed(1),+end.z.toFixed(1)]});
+  if(!best||hidePh) return;
+
+  /* who did you hit, and what does that mean */
+  if(myRole==="seeker"&&best.role==="hider"){
+    hitHider(best);
+  }else if(myRole!=="seeker"&&best.role==="seeker"){
+    downSeeker(best);
+  }else{
+    say("◂ THAT'S ONE OF OURS — CHECK YOUR TARGET ▸",2.0);
+  }
+}
+function hitHider(T){
+  if(T.kind==="p"){
+    const p=players.get(T.id); if(p) p.out=true;
+    send({t:"tag",target:T.id}); renderRoster();
+  }else if(T.kind==="aih"){ T.ref.out=true; }
+  say("◂ HIT — "+T.name+" IS DOWN ▸",2.4);
+}
+function downSeeker(T){
+  say("◂ YOU PUT ONE IN THE SEEKER — HE'S DOWN ▸",3.0);
+  radioIn("RADIO","seeker's hit, he's stopped. Move.",0.3);
+  if(T.kind==="p"){ if(netOK) send({t:"down",target:T.id}); }
+  else if(T.kind==="ais"&&state.ai.seek){ state.ai.seek.down=DOWN_S; }
+}
+
 function bar(f){const n=Math.round(Math.max(0,Math.min(1,f))*10);
   return "["+"\u2588".repeat(n)+"\u00b7".repeat(10-n)+"]";}
 function say(msg,dur){ if(!state)return; state.radioT=dur||2.6;
@@ -2546,8 +2908,9 @@ function tick(){
     const boost=1;
     /* off the machine and up on the wire — the keys fly the camera now */
     if(spec.on){ st.spd=0; st.thr=0; st.rpm=0; st.air=false; st.vy=0; st.wipe=0; }
-    const wUp=!spec.on&&(keys["keyw"]||keys["arrowup"]);
-    const wDn=!spec.on&&(keys["keys"]||keys["arrowdown"]);
+    const hit=(st.down||0)>0;                    // shot off the machine, riding it out
+    const wUp=!spec.on&&!hit&&(keys["keyw"]||keys["arrowup"]);
+    const wDn=!spec.on&&!hit&&(keys["keys"]||keys["arrowdown"]);
     const topScale=isKub?0.45:1;
 
     if(!st.adv){
@@ -2693,8 +3056,8 @@ function tick(){
         if(d<nearest)nearest=d;
         const hd=T.hdg+(T.sweep||0);
         const hidePh = serverDriving()?RS.phase==="hide":LR.phase==="hide";
-        if(T.lights!==false && !hidePh &&
-           seeable(T.px,T.py,hd,st.px,st.py,BEAM_PX,BEAM_HALF,true,hidden)) inBeam=true;
+        if(tagArmed(T.lights!==false) && !hidePh &&
+           seeable(T.px,T.py,hd,st.px,st.py,tagRange(),tagHalf(),true,hidden)) inBeam=true;
         if(d<SPOT_PX&&losOpen(T.px,T.py,st.px,st.py)) anyLOS=true;
         if(st.lights&&seeable(T.px,T.py,hd,st.px,st.py,SPOT_PX,1.25,true,false)&&T.ai){
           T.memo=8;T.mx=st.px;T.my=st.py;
@@ -2710,11 +3073,11 @@ function tick(){
       /* lights off, you tag nobody. And you have to HOLD the beam on them. */
       st.lock=st.lock||{};
       const hidePhase = serverDriving()?RS.phase==="hide":LR.phase==="hide";
-      const canTag = st.lights && !hidePhase;
+      const canTag = tagArmed(st.lights) && !hidePhase && (st.down||0)<=0;
       let bestLock=0, bestName="";
       for(const[id,p]of players){
         if(p.role!=="hider"||p.out){ st.lock[id]=0; continue; }
-        const lit = canTag && seeable(st.px,st.py,st.hdg,p.px,p.py,BEAM_PX,BEAM_HALF,true,inBush(p.px,p.py));
+        const lit = canTag && seeable(st.px,st.py,st.hdg,p.px,p.py,tagRange(),tagHalf(),true,inBush(p.px,p.py));
         st.lock[id]=lit?(st.lock[id]||0)+dt:Math.max(0,(st.lock[id]||0)-dt*1.6);
         if(st.lock[id]>bestLock){bestLock=st.lock[id];bestName=p.name||"HIDER";}
         if(st.lock[id]>=DWELL){
@@ -2725,7 +3088,7 @@ function tick(){
       for(let i=0;i<st.ai.hiders.length;i++){
         const h=st.ai.hiders[i], k="ai"+i;
         if(h.out){ st.lock[k]=0; continue; }
-        const lit = canTag && seeable(st.px,st.py,st.hdg,h.px,h.py,BEAM_PX,BEAM_HALF,true,inBush(h.px,h.py));
+        const lit = canTag && seeable(st.px,st.py,st.hdg,h.px,h.py,tagRange(),tagHalf(),true,inBush(h.px,h.py));
         st.lock[k]=lit?(st.lock[k]||0)+dt:Math.max(0,(st.lock[k]||0)-dt*1.6);
         if(st.lock[k]>bestLock){bestLock=st.lock[k];bestName="HIDER";}
         if(st.lock[k]>=DWELL){ h.out=true; st.lock[k]=0; say("◂ TAGGED A HIDER ▸",2.2); }
@@ -2739,7 +3102,7 @@ function tick(){
       el("alert").textContent="HOLDING "+bar(st.bestLock/DWELL);
       el("alert").style.color="#ffd76a"; el("alert").classList.add("show");
     }else if(myRole!=="seeker"&&st.beamHold>0.15){
-      el("alert").textContent="IN HIS BEAM  "+bar(st.beamHold/DWELL);
+      el("alert").textContent=(isDay()?"HE HAS EYES ON YOU  ":"IN HIS BEAM  ")+bar(st.beamHold/DWELL);
       el("alert").style.color="#ff4d42"; el("alert").classList.add("show");
     }else if(hidden&&myRole!=="seeker"){
       el("alert").textContent="IN COVER"; el("alert").style.color="#34e0c8";
@@ -2766,6 +3129,16 @@ function tick(){
     if(st.pingT>0)st.pingT-=dt;
     if(st.radioT>0){st.radioT-=dt;if(st.radioT<=0)el("radio").classList.remove("show");}
     aiContactCalls(st,dt); stepRadio(dt);
+    /* weapon timers */
+    if(GUNS){
+      st.kick=Math.max(0,(st.kick||0)-dt*6.5);
+      if(st.reload>0){ st.reload-=dt; if(st.reload<=0){ st.reload=0; st.ammo=MAG; } }
+      if(st.down>0){
+        st.down-=dt; st.spd*=Math.pow(.05,dt); st.engine=false;
+        if(st.down<=0){ st.down=0; st.engine=true; say("◂ BACK UP — GET MOVING ▸",2.0); }
+      }
+      if(st.ai.seek&&st.ai.seek.down>0) st.ai.seek.down-=dt;
+    }
 
     /* objectives (hiders only) */
     if(myRole==="hider"&&!ghost&&RS.phase!=="over"){
@@ -2827,8 +3200,9 @@ function tick(){
   me.atv.rotation.z=st.wipe>0?Math.min(1.5,(2.4-st.wipe)*1.6):st.roll+st.slip*0.24;
   const kub2=(myRole==="kubota")?2:1;
   const braking=(keys["keys"]||keys["arrowdown"])&&st.spd>0.4;
-  me.light.intensity=st.lights?150*kub2:0;
-  me.flood.intensity=st.lights?34*kub2:0;
+  const lampK=isDay()?0.10:1;                  // a headlight is worth nothing at noon
+  me.light.intensity=st.lights?150*kub2*lampK:0;
+  me.flood.intensity=st.lights?34*kub2*lampK:0;
   me.brakeL.intensity=braking?2.6:0;
   for(const b of me.atv.userData.brake||[]) b.material.color.setHex(braking?0xff3a22:0x3a0d0a);
   // the beam rides the suspension: dives under brakes, lifts under power, jitters when it's rough
@@ -2838,7 +3212,7 @@ function tick(){
   me.light.target.position.set(0,-1.1+st.squat*7+bob*8,26);
   me.flood.target.position.set(0,-2.4+st.squat*5,9);
   me.beam.rotation.x=st.squat*0.85+bob;
-  me.beam.visible=st.lights&&camMode===0&&!spec.on;
+  me.beam.visible=st.lights&&camMode===0&&!spec.on&&!isDay();
   me.atv.visible=!spec.on;                    // your machine is out of the round
   for(const p of me.atv.userData.pods)p.material.color.setHex(st.lights?0xfff2c8:0x2a2a24);
   me.glow.material.opacity=0;
@@ -2846,6 +3220,12 @@ function tick(){
   // night vision
   /* a spectator gets a little moonlight lifted for them — pitch black is the
      hider's problem, and you can't watch a hunt you can't see */
+  if(isDay()){
+    /* nothing to adjust at noon. No night vision, no moonlight to lift for a
+       spectator, no beam worth drawing — the whole farm is already lit. */
+    el("nvv").style.opacity=0; el("nvg").style.opacity=0; el("nvring").style.opacity=0;
+    el("vig").style.opacity=.28;
+  }else{
   /* the spectator gets real moonlight — you cannot watch a hunt you can't see */
   scene.userData.amb.color.setHex(spec.on?0x64789c:0x1a2740);
   scene.userData.amb.intensity =st.nv?16 :(spec.on?2.4:.075);
@@ -2862,6 +3242,7 @@ function tick(){
     bs.material.opacity=st.nv?1:.95;
     bs.material.color.setHex(st.nv?0xa8ffc4:0xffffff);
   }
+  }
 
   // remote players
   for(const[id,p]of players){
@@ -2872,9 +3253,10 @@ function tick(){
     r.atv.position.set(toWX(p.px),hy,toWZ(p.py));
     r.atv.rotation.y=-p.hdg+Math.PI/2;
     const k2=(p.role==="kubota")?2:1;
-    r.light.intensity=p.lights&&!p.out?(p.role==="seeker"?165:130)*k2:0;
-    r.flood.intensity=p.lights&&!p.out?34*k2:0;
-    r.beam.visible=!!p.lights&&!p.out;
+    const lk=isDay()?0.10:1;
+    r.light.intensity=p.lights&&!p.out?(p.role==="seeker"?165:130)*k2*lk:0;
+    r.flood.intensity=p.lights&&!p.out?34*k2*lk:0;
+    r.beam.visible=!!p.lights&&!p.out&&!isDay();
     for(const q of r.atv.userData.pods)q.material.color.setHex(p.lights?0xfff2c8:0x2a2a24);
     r.glow.position.set(r.atv.position.x,hy+12,r.atv.position.z);
     const dd=Math.hypot(st.px-p.px,st.py-p.py)*S;
@@ -2889,7 +3271,9 @@ function tick(){
     const s=st.ai.seek,sy=height(s.px,s.py);
     seekerAIRig.atv.position.set(toWX(s.px),sy,toWZ(s.py));
     seekerAIRig.atv.rotation.y=-(s.hdg+s.sweep)+Math.PI/2;
-    seekerAIRig.light.intensity=165; seekerAIRig.flood.intensity=34; seekerAIRig.beam.visible=true;
+    const lk2=isDay()?0.10:1;
+    seekerAIRig.light.intensity=165*lk2; seekerAIRig.flood.intensity=34*lk2;
+    seekerAIRig.beam.visible=!isDay();
     for(const q of seekerAIRig.atv.userData.pods)q.material.color.setHex(0xfff2c8);
     seekerAIRig.glow.position.set(seekerAIRig.atv.position.x,sy+12,seekerAIRig.atv.position.z);
     const dd=Math.hypot(st.px-s.px,st.py-s.py)*S;
@@ -2909,7 +3293,8 @@ function tick(){
 
   for(const c of canMeshes){
     if(c.got) continue;
-    c.halo.material.opacity=.34+Math.sin(st.t*3)*.16;
+    /* the pump glow is a night cue — in daylight it's just a box on the screen */
+    c.halo.material.opacity=(.34+Math.sin(st.t*3)*.16)*(isDay()?0.16:1);
     c.lamp.intensity=.55+Math.sin(st.t*3)*.28+c.fill*1.6;
     if(c.ringFg.geometry) c.ringFg.geometry.dispose();
     c.ringFg.geometry=new THREE.RingGeometry(1.15,1.42,28,1,-Math.PI/2,
@@ -2930,6 +3315,7 @@ function tick(){
     cam.lookAt(me.atv.position.clone().add(fwd.clone().multiplyScalar(28)).add(new THREE.Vector3(0,1.7,0)));
   }
 
+  if(GUNS){ placeGun(st); stepTracers(dt); }
   stepSplash(dt); stepSmoke(dt); stepBear(dt,st.px,st.py); stepAtmos(dt,st.t);
   stepFireworks(dt); stepNades(dt); stepLocalRound(dt);
   if(st.shake>0.002){const s2=st.shake*0.55;
@@ -2988,6 +3374,15 @@ function updateHUD(nearestPx){
   el("tachF").style.width=(st.rpm*100)+"%";
   el("tachF").style.background=st.rpm>.92?"#ff4d42":st.rpm>.72?"#f0b429":"#34e0c8";
   el("modeN").textContent=st.adv?"MANUAL":"AUTO";
+  if(GUNS){
+    const live=!spec.on&&!st.out&&running;
+    el("cross").classList.toggle("show",live&&(st.down||0)<=0);
+    el("ammo").classList.toggle("show",live);
+    el("ammo").classList.toggle("low",st.ammo<=2);
+    el("ammoN").textContent=st.ammo;
+    el("ammoS").textContent="/ "+MAG;
+    el("ammoR").style.visibility=st.reload>0?"visible":"hidden";
+  }
   if(myRole==="hider"){
     let h="";
     for(let i=0;i<canMeshes.length;i++){
@@ -3151,6 +3546,8 @@ addEventListener("keydown",e=>{
     if(state.engine){ state.engine=false; state.spd*=.6; engineStop(); say("◂ ENGINE OFF — LISTEN ▸",2.2); }
     else{ state.crank=1.25; engineCrank(); }
   }
+  if(GUNS&&k==="keyr"&&!e.repeat) reloadGun();
+  if(GUNS&&k==="space"&&!e.repeat){ e.preventDefault(); fireGun(); }
   if(k==="keym")toggleMap();
   if(k==="escape"&&paused)toggleMap();
   if(k==="keyr"&&scene)resetGame();
@@ -3164,6 +3561,12 @@ function shift(d){
   if(GEARS[state.gear].max<0&&state.spd>2) state.gear=GN;
   if(state.gear!==was){ clunk(d>0); state.shiftKick=d>0?0.22:0.10; }
 }
+addEventListener("mousedown",e=>{
+  if(!GUNS||e.button!==0) return;
+  if(document.activeElement&&document.activeElement.tagName==="INPUT") return;
+  if(el("start").classList.contains("hide")&&!paused) fireGun();
+});
+addEventListener("contextmenu",e=>{ if(GUNS&&running) e.preventDefault(); });
 addEventListener("keyup",e=>{const k=e.code.toLowerCase();keys[k]=false;
   if(k==="keyt"){setPTT(false);srStop();
     // give the transcriber a beat to hand over the last words
@@ -3178,6 +3581,7 @@ let roundMin=5;
   for(const k in QUAL) sel.innerHTML+=
     '<option value="'+k+'"'+(k===cur?" selected":"")+'>'+QUAL[k].label+' — '+QUAL[k].note+'</option>';
   const f=localStorage.getItem("nightops.fps"); if(f!==null) el("fpsIn").value=f;
+  el("mapIn").value=MAPMODE; el("gunIn").value=GUNS?"on":"off";
 })();
 document.querySelectorAll(".role[data-role]").forEach(r=>r.onclick=()=>{
   document.querySelectorAll(".role[data-role]").forEach(x=>x.classList.remove("sel"));
@@ -3219,6 +3623,8 @@ img.src=IMG_SRC;
 
 el("goBtn").onclick=()=>{
   initAudio();if(actx&&actx.state==="suspended")actx.resume();initMic();
+  MAPMODE=el("mapIn").value==="day"?"day":"night"; localStorage.setItem("nightops.map",MAPMODE);
+  GUNS=el("gunIn").value==="on"; localStorage.setItem("nightops.guns",GUNS?"on":"off");
   Q=QUAL[el("qIn").value]||QUAL.high; localStorage.setItem("nightops.q",el("qIn").value);
   FPSCAP=parseInt(el("fpsIn").value,10)||0; localStorage.setItem("nightops.fps",el("fpsIn").value);
   myName=(el("nameIn").value||"").trim().slice(0,14)||("RIDER"+((Math.random()*90+10)|0));

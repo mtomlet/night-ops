@@ -221,6 +221,16 @@ server.on("upgrade", (req, sock) => {
       } else if (msg.t === "extract") {
         if (round.phase === "running" && me.role === "hider" &&
             round.tanks.every(v => v >= 1) && !round.out[id]) endRound("hiders");
+      } else if (msg.t === "shot") {
+        /* tracer + report for everyone else. No authority here — a shot that
+           actually lands arrives separately as a tag or a down. */
+        msg.id = id; broadcast(msg, id);
+      } else if (msg.t === "down") {
+        /* a hider put one in the seeker: he's stopped for a few seconds */
+        const target = clients.get(msg.target);
+        if (round.phase === "running" && target && target.role === "seeker" && me.role === "hider") {
+          broadcast({ t: "down", id, target: msg.target });
+        }
       } else if (msg.t === "spot" || msg.t === "chat") {
         msg.id = id; broadcast(msg, id);
       }
